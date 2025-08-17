@@ -35,8 +35,8 @@ app.use("/line", lineRouter);
 const reactDist = path.join(__dirname, "..", "frontend", "dist");
 if (fs.existsSync(reactDist)) {
   app.use(express.static(reactDist));
-  // Express v5 (path-to-regexp v6): use param with '*' modifier for catch-all
-  app.get(["/", "/:path*"], (req, res) => {
+  // Use RegExp catch-all to avoid path-to-regexp string parsing pitfalls
+  app.get(/.*/, (req, res) => {
     res.sendFile(path.join(reactDist, "index.html"));
   });
 } else {
