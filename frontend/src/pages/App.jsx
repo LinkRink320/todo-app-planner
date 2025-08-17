@@ -166,40 +166,11 @@ export default function App() {
   if (loading) return <div style={{ padding: 24 }}>Loading…</div>;
 
   if (!api || !uid) {
-    return (
-      <div
-        style={{
-          fontFamily: "system-ui, sans-serif",
-          maxWidth: 480,
-          margin: "0 auto",
-          padding: 24,
-        }}
-      >
-        <h2>ログイン</h2>
-        <p style={{ color: "#555" }}>
-          API_KEY と LINE User ID を入力してください。
-        </p>
-        <div style={{ display: "grid", gap: 8 }}>
-          <input
-            placeholder="API_KEY"
-            value={api}
-            onChange={(e) => setApi(e.target.value)}
-          />
-          <input
-            placeholder="LINE User ID"
-            value={uid}
-            onChange={(e) => setUid(e.target.value)}
-          />
-          <button
-            onClick={() => {
-              if (api && uid) loadProjects();
-            }}
-          >
-            続ける
-          </button>
-        </div>
-      </div>
-    );
+    // 認証情報が無い場合はログイン画面へ
+    try {
+      window.location.replace("/login");
+    } catch {}
+    return null;
   }
 
   return (
@@ -239,19 +210,21 @@ export default function App() {
       )}
       <header style={{ display: "flex", gap: 8, alignItems: "center" }}>
         <strong>Todo Planner (React)</strong>
-        <input
-          placeholder="API_KEY"
-          value={api}
-          onChange={(e) => setApi(e.target.value)}
-        />
-        <input
-          placeholder="LINE User ID"
-          value={uid}
-          onChange={(e) => setUid(e.target.value)}
-          style={{ minWidth: 260 }}
-        />
         <span style={{ marginLeft: "auto", color: "#777" }}>
-          プロジェクトを選択してタスク管理
+          <a href="/login" style={{ marginRight: 12 }}>
+            ログイン
+          </a>
+          <button
+            onClick={() => {
+              try {
+                sessionStorage.removeItem("API_KEY");
+                sessionStorage.removeItem("LINE_USER_ID");
+              } catch {}
+              window.location.replace("/login");
+            }}
+          >
+            ログアウト
+          </button>
         </span>
       </header>
       <div
