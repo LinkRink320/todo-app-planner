@@ -1,6 +1,8 @@
 // src/server.js（完成版：DB連動の add / ls / done 対応）
 require("dotenv").config();
 const express = require("express");
+const path = require('path');
+const fs = require('fs');
 const { middleware, Client } = require("@line/bot-sdk");
 const cron = require("node-cron");
 const db = require("./db"); // ★追加
@@ -17,9 +19,11 @@ app.use('/api', express.json());
 
 // ヘルスチェック
 app.get("/", (_, res) => res.send("ok"));
+// Static assets for web app
+app.use('/static', express.static(path.join(__dirname, 'public')));
 app.get('/app', (req, res) => {
   res.setHeader('Content-Type','text/html; charset=utf-8');
-  require('fs').createReadStream(require('path').join(__dirname, 'app.html')).pipe(res);
+  fs.createReadStream(path.join(__dirname, 'app.html')).pipe(res);
 });
 
 // ── Minimal REST API (optional): API_KEY required in header x-api-key
