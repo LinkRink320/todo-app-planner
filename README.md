@@ -9,7 +9,7 @@ LINE で「追加・一覧・完了」ができ、締切超過を自動検知し
 - sqlite3（ローカル DB）
 - node-cron（締切チェック）
 - ngrok（ローカル Webhook 公開）
-- 最小REST + 簡易Web UI（PDCA ログ）
+- 最小 REST + 簡易 Web UI（PDCA ログ）
 
 ## データスキーマ
 
@@ -39,9 +39,9 @@ LINE で「追加・一覧・完了」ができ、締切超過を自動検知し
 - タスク追加（プロジェクト配下）: `addp 3 2025-09-01 09:00 企画書ドラフト`
 - タスク一覧（プロジェクト配下）: `lsp 3`
 
-ユーザーIDの確認:
+ユーザー ID の確認:
 
-- `whoami`（または `myid` / `id`）を個チャで送ると、自分の LINE User ID が返信されます。/app の「LINE User ID」欄にも同じIDを入力してください。
+- `whoami`（または `myid` / `id`）を個チャで送ると、自分の LINE User ID が返信されます。/app の「LINE User ID」欄にも同じ ID を入力してください。
 
 ## セットアップ
 
@@ -105,17 +105,27 @@ ngrok http 3000
 - PORT（省略時 3000）
 - DATABASE_PATH（省略時 ./data.db）
 - TZ（省略時 未設定。クラウドでは `Asia/Tokyo` を推奨）
-- API_KEY（REST/簡易UI 用。任意）
+- API_KEY（REST/簡易 UI 用。任意）
 - DEFAULT_LINE_USER_ID（任意。/app 初期入力に使用）
 - DEFAULT_LINE_USER_NAME（任意。将来用途）
 
 ## ヘルスチェック
 
 - GET `/` → `ok`
-- GET `/app` → 簡易PDCA UI（.env の API_KEY を `x-api-key` に設定して利用）
+- GET `/app` → 簡易 PDCA UI（.env の API_KEY を `x-api-key` に設定して利用）
+  - 入口: GET `/login` → API_KEY と LINE User ID を入力 → /app へ遷移（セッション保存）
+  - React 版: `/react`（ビルド済みのとき）
+
+### フロントエンド（React, 任意）
+
+- ローカル開発
+  - バックエンド: `npm run dev`
+  - React: `npm run web:dev`（http://localhost:5173、/api は http://localhost:3000 にプロキシ）
+- ビルドしてサーバから配信
+  - `npm run web:build` → `src/server.js` が `/react` で `frontend/dist` を配信
 - LINE User ID は `whoami` コマンドで取得可能。
-- GET `/api/config` → クライアント初期化用の公開設定（APIキーは返しません）
-- GET `/api/line-profile?user_id=...`（要 `x-api-key`）→ LINEのdisplayName参照
+- GET `/api/config` → クライアント初期化用の公開設定（API キーは返しません）
+- GET `/api/line-profile?user_id=...`（要 `x-api-key`）→ LINE の displayName 参照
 
 ## 最小 REST（PDCA）
 

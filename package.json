@@ -2,11 +2,14 @@
   "name": "todo-app-planner",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "backend/server.js",
   "scripts": {
-    "dev": "nodemon src/server.js",
-    "start": "node src/server.js",
+    "dev": "nodemon backend/server.js",
+    "start": "node backend/server.js",
     "tunnel": "ngrok http 3000",
+    "web:dev": "npm --prefix frontend run dev",
+    "web:build": "npm --prefix frontend run build",
+    "web:preview": "npm --prefix frontend run preview",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
