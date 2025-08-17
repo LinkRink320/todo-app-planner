@@ -1,5 +1,12 @@
+function toHalfWidth(str) {
+  // Convert full-width ASCII range to half-width to tolerate mobile input (ＵＲＬ, etc.)
+  return str.replace(/[！-～]/g, (ch) =>
+    String.fromCharCode(ch.charCodeAt(0) - 0xFEE0)
+  );
+}
+
 function parse(text) {
-  const t = text.trim();
+  const t = toHalfWidth(String(text || "")).trim();
   if (t.startsWith("add ")) {
     const [, date, time, ...rest] = t.split(" ");
     if (!date || !time || !rest.length)

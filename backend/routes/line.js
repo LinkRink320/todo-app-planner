@@ -225,7 +225,8 @@ router.post("/webhook", middleware(line), async (req, res) => {
 
         return client.replyMessage(e.replyToken, {
           type: "text",
-          text: "使い方: whoami(=myid/id) / add YYYY-MM-DD HH:mm タイトル / ls / done {id} / watch here(グループで) / addl YYYY-MM-DD HH:mm タイトル / lsl / prog {id} {0-100%} / padd 名称 / pls / addp {pid} YYYY-MM-DD HH:mm タイトル / lsp {pid}",
+          text:
+            "使い方: whoami(=myid/id) / URL / add YYYY-MM-DD HH:mm タイトル / ls / done {id} / watch here(グループで) / addl YYYY-MM-DD HH:mm タイトル / lsl / prog {id} {0-100%} / padd 名称 / pls / addp {pid} YYYY-MM-DD HH:mm タイトル / lsp {pid}",
         });
       })
     );
