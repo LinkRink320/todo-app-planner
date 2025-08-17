@@ -94,7 +94,7 @@ router.post("/projects", (req, res) => {
 });
 
 router.get("/tasks", (req, res) => {
-  const { line_user_id, project_id, status = "pending" } = req.query;
+  const { line_user_id, project_id, status = "pending", limit } = req.query;
   if (!line_user_id)
     return res.status(400).json({ error: "line_user_id required" });
   const conds = ["line_user_id=?"];
@@ -112,9 +112,10 @@ router.get("/tasks", (req, res) => {
     args.push(status);
   }
   const where = "WHERE " + conds.join(" AND ");
+  const lim = Math.min(Math.max(parseInt(limit || 200, 10) || 200, 1), 1000);
   db.all(
-    `SELECT id,title,deadline,status,project_id,type,progress FROM tasks ${where} ORDER BY deadline ASC`,
-    args,
+    `SELECT id,title,deadline,status,project_id,type,progress FROM tasks ${where} ORDER BY deadline ASC LIMIT ?`,
+    [...args, lim],
     (e, rows) => {
       if (e) return res.status(500).json({ error: "db", detail: String(e) });
       res.json(rows || []);

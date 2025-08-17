@@ -7,6 +7,16 @@ const dbPath = path.isAbsolute(env.DATABASE_PATH)
   : path.join(process.cwd(), env.DATABASE_PATH);
 const db = new sqlite3.Database(dbPath);
 
+// Improve concurrency and reduce lock contention timeouts
+db.serialize(() => {
+  // Wait up to 5s if the database is busy (e.g., concurrent write)
+  db.run("PRAGMA busy_timeout = 5000");
+  // WAL mode for better read concurrency
+  db.run("PRAGMA journal_mode = WAL");
+  // Reasonable sync for server workloads
+  db.run("PRAGMA synchronous = NORMAL");
+});
+
 db.serialize(() => {
   db.run(`CREATE TABLE IF NOT EXISTS tasks(
     id INTEGER PRIMARY KEY AUTOINCREMENT,

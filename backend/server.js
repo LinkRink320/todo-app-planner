@@ -13,7 +13,15 @@ const client = new Client(lineCfg);
 const app = express();
 
 app.get("/healthz", (_, res) => res.send("ok"));
-app.use("/api", express.json());
+// Basic request timeout for API routes to avoid hanging connections
+function withTimeout(ms) {
+  return function (req, res, next) {
+    req.setTimeout(ms);
+    res.setTimeout(ms);
+    next();
+  };
+}
+app.use("/api", withTimeout(10000), express.json());
 app.get("/api/config", (req, res) => {
   res.json({
     apiKeySet: Boolean(env.API_KEY),
