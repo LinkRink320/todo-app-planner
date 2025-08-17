@@ -6,6 +6,7 @@ const { env, line } = require("../config");
 const router = express.Router();
 const client = new Client(line);
 
+// Guard
 router.use((req, res, next) => {
   const k = req.headers["x-api-key"];
   if (!env.API_KEY) return res.status(403).json({ error: "API disabled" });
@@ -13,6 +14,7 @@ router.use((req, res, next) => {
   next();
 });
 
+// PDCA logs
 router.post("/logs", (req, res) => {
   const { line_user_id, project_id, task_id, type, note } = req.body || {};
   if (!line_user_id || !type)
@@ -64,6 +66,7 @@ router.get("/logs", (req, res) => {
   );
 });
 
+// Projects
 router.get("/projects", (req, res) => {
   const { line_user_id } = req.query;
   if (!line_user_id)
@@ -93,19 +96,16 @@ router.post("/projects", (req, res) => {
   );
 });
 
+// Tasks
 router.get("/tasks", (req, res) => {
   const { line_user_id, project_id, status = "pending" } = req.query;
   if (!line_user_id)
     return res.status(400).json({ error: "line_user_id required" });
   const conds = ["line_user_id=?"];
   const args = [line_user_id];
-  if (typeof project_id !== "undefined") {
-    if (project_id === "none") {
-      conds.push("project_id IS NULL");
-    } else if (String(project_id).length) {
-      conds.push("project_id=?");
-      args.push(project_id);
-    }
+  if (project_id) {
+    conds.push("project_id=?");
+    args.push(project_id);
   }
   if (status && status !== "all") {
     conds.push("status=?");
@@ -150,6 +150,7 @@ router.patch("/tasks/:id", (req, res) => {
   });
 });
 
+// LINE profile lookup
 router.get("/line-profile", async (req, res) => {
   try {
     const userId = String(req.query.user_id || "");

@@ -1,4 +1,4 @@
-// backend/server.js
+// src/server.js (clean modular)
 const express = require("express");
 const path = require("path");
 const fs = require("fs");
@@ -9,11 +9,18 @@ const { env, line: lineCfg } = require("./config");
 const apiRouter = require("./routes/api");
 const lineRouter = require("./routes/line");
 
+// LINE client for cron pushes
 const client = new Client(lineCfg);
+
 const app = express();
 
+// Health check (keep a dedicated endpoint)
 app.get("/healthz", (_, res) => res.send("ok"));
+
+// Scope JSON body parser to /api only (avoid interfering with LINE signature middleware)
 app.use("/api", express.json());
+
+// Public config (no secrets leaked)
 app.get("/api/config", (req, res) => {
   res.json({
     apiKeySet: Boolean(env.API_KEY),
@@ -21,13 +28,18 @@ app.get("/api/config", (req, res) => {
     defaultLineUserName: env.DEFAULT_LINE_USER_NAME || null,
   });
 });
+
+// Mount API routes (protected by x-api-key inside router)
 app.use("/api", apiRouter);
+
+// LINE webhook
 app.use("/line", lineRouter);
 
+// Serve React build at root if available; otherwise expose a minimal root message
 const reactDist = path.join(__dirname, "..", "frontend", "dist");
 if (fs.existsSync(reactDist)) {
   app.use(express.static(reactDist));
-  app.get(["/", "/*"], (req, res) => {
+  app.get(["/", "/app", "/login", "/*"], (req, res) => {
     res.sendFile(path.join(reactDist, "index.html"));
   });
 } else {
@@ -36,14 +48,21 @@ if (fs.existsSync(reactDist)) {
   );
 }
 
+// Start server
 app.listen(env.PORT, () => console.log("server ready"));
 
+// ───────────────────────────────────────────────────────────────
+// 期限チェック（毎分）: 期限超過 & pending → failed に更新し通知
+// 保存フォーマットは "YYYY-MM-DD HH:mm"（ローカル時刻として比較）
 cron.schedule("* * * * *", async () => {
   const now = new Date();
   const pad = (n) => n.toString().padStart(2, "0");
+  // ローカルのYYYY-MM-DD HH:mmに丸め
   const current = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(
     now.getDate()
   )} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+
+  // 30分前/5分前リマインド
   const fmt = (d) =>
     `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(
       d.getHours()
@@ -91,11 +110,13 @@ cron.schedule("* * * * *", async () => {
               type: "text",
               text: `⚠️未達成「${r.title}」(期限: ${r.deadline})`,
             };
+            // 本人へ
             try {
               await client.pushMessage(r.line_user_id, msg);
             } catch (e) {
               console.error("[PUSH user ERROR]", e?.response?.data || e);
             }
+            // 監視グループへ
             db.get(
               "SELECT group_id FROM groups WHERE owner_line_user_id=? ORDER BY id DESC LIMIT 1",
               [r.line_user_id],

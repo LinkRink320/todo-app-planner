@@ -10,6 +10,7 @@
     "web:dev": "npm --prefix frontend run dev",
     "web:build": "npm --prefix frontend run build",
     "web:preview": "npm --prefix frontend run preview",
+    "db:inspect": "node backend/tools/db-inspect.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {

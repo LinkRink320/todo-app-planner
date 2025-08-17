@@ -1,8 +1,10 @@
 const sqlite3 = require("sqlite3").verbose();
-const path = require('path');
-const { env } = require('./config');
+const path = require("path");
+const { env } = require("./config");
 
-const dbPath = path.isAbsolute(env.DATABASE_PATH) ? env.DATABASE_PATH : path.join(process.cwd(), env.DATABASE_PATH);
+const dbPath = path.isAbsolute(env.DATABASE_PATH)
+  ? env.DATABASE_PATH
+  : path.join(process.cwd(), env.DATABASE_PATH);
 const db = new sqlite3.Database(dbPath);
 
 db.serialize(() => {
@@ -19,17 +21,32 @@ db.serialize(() => {
     if (err) return;
     const names = new Set((cols || []).map((c) => c.name));
     const alters = [];
-    if (!names.has("type")) alters.push("ALTER TABLE tasks ADD COLUMN type TEXT NOT NULL DEFAULT 'short'");
-    if (!names.has("progress")) alters.push("ALTER TABLE tasks ADD COLUMN progress INTEGER NOT NULL DEFAULT 0");
-    if (!names.has("last_progress_at")) alters.push("ALTER TABLE tasks ADD COLUMN last_progress_at TEXT");
-    if (!names.has("updated_at")) alters.push("ALTER TABLE tasks ADD COLUMN updated_at TEXT");
-    if (!names.has("project_id")) alters.push("ALTER TABLE tasks ADD COLUMN project_id INTEGER");
+    if (!names.has("type"))
+      alters.push(
+        "ALTER TABLE tasks ADD COLUMN type TEXT NOT NULL DEFAULT 'short'"
+      );
+    if (!names.has("progress"))
+      alters.push(
+        "ALTER TABLE tasks ADD COLUMN progress INTEGER NOT NULL DEFAULT 0"
+      );
+    if (!names.has("last_progress_at"))
+      alters.push("ALTER TABLE tasks ADD COLUMN last_progress_at TEXT");
+    if (!names.has("updated_at"))
+      alters.push("ALTER TABLE tasks ADD COLUMN updated_at TEXT");
+    if (!names.has("project_id"))
+      alters.push("ALTER TABLE tasks ADD COLUMN project_id INTEGER");
 
     db.serialize(() => {
       alters.forEach((sql) => db.run(sql));
-      db.run("CREATE INDEX IF NOT EXISTS idx_tasks_user_status_deadline ON tasks(line_user_id, status, deadline)");
-      db.run("CREATE INDEX IF NOT EXISTS idx_tasks_user_type ON tasks(line_user_id, type)");
-      db.run("CREATE INDEX IF NOT EXISTS idx_tasks_user_project ON tasks(line_user_id, project_id)");
+      db.run(
+        "CREATE INDEX IF NOT EXISTS idx_tasks_user_status_deadline ON tasks(line_user_id, status, deadline)"
+      );
+      db.run(
+        "CREATE INDEX IF NOT EXISTS idx_tasks_user_type ON tasks(line_user_id, type)"
+      );
+      db.run(
+        "CREATE INDEX IF NOT EXISTS idx_tasks_user_project ON tasks(line_user_id, project_id)"
+      );
     });
   });
 
@@ -48,7 +65,9 @@ db.serialize(() => {
     created_at TEXT DEFAULT (datetime('now','localtime')),
     updated_at TEXT
   )`);
-  db.run("CREATE INDEX IF NOT EXISTS idx_projects_user ON projects(line_user_id)");
+  db.run(
+    "CREATE INDEX IF NOT EXISTS idx_projects_user ON projects(line_user_id)"
+  );
 
   db.run(`CREATE TABLE IF NOT EXISTS logs(
     id INTEGER PRIMARY KEY AUTOINCREMENT,

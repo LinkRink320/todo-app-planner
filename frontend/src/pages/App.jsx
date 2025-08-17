@@ -25,6 +25,8 @@ export default function App() {
   const [tdeadline, setTdeadline] = useState("");
   const [loading, setLoading] = useState(true);
   const [profileName, setProfileName] = useState("");
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
 
   useEffect(() => {
     setSession("API_KEY", api);
@@ -47,6 +49,16 @@ export default function App() {
     return { "x-api-key": api, "Content-Type": "application/json" };
   }
 
+  function showErr(e) {
+    const text = typeof e === "string" ? e : e?.message || "Error";
+    setErr(text);
+    setTimeout(() => setErr(""), 4000);
+  }
+  function showMsg(text) {
+    setMsg(text);
+    setTimeout(() => setMsg(""), 2000);
+  }
+
   async function bootstrap() {
     try {
       const r = await fetch("/api/config");
@@ -67,47 +79,76 @@ export default function App() {
       `/api/projects?line_user_id=${encodeURIComponent(uid)}`,
       { headers: await h() }
     );
-    if (!r.ok) return;
+    if (!r.ok) {
+      showErr(`projects ${r.status}`);
+      return;
+    }
     setProjects(await r.json());
   }
   async function createProject() {
-    if (!uid || !pname) return;
+    if (!uid) return showErr("LINE User IDを入力してください");
+    if (!pname) return showErr("プロジェクト名を入力してください");
     const r = await fetch("/api/projects", {
       method: "POST",
       headers: await h(),
       body: JSON.stringify({ line_user_id: uid, name: pname }),
     });
-    if (!r.ok) return;
+    if (!r.ok) {
+      let d = "";
+      try {
+        d = await r.text();
+      } catch {}
+      return showErr(`create project ${r.status} ${d}`);
+    }
     setPname("");
     loadProjects();
+    showMsg("プロジェクトを追加しました");
   }
   async function loadTasks() {
     if (!uid) return;
     const qs = new URLSearchParams({ line_user_id: uid });
-    if (pid) qs.set("project_id", String(pid));
+    if (pid === null) {
+      // no project filter
+    } else if (pid === "none") {
+      qs.set("project_id", "none");
+    } else if (pid) {
+      qs.set("project_id", String(pid));
+    }
     if (status) qs.set("status", status);
     const r = await fetch(`/api/tasks?${qs.toString()}`, {
       headers: await h(),
     });
-    if (!r.ok) return;
+    if (!r.ok) {
+      showErr(`tasks ${r.status}`);
+      return;
+    }
     setTasks(await r.json());
   }
   async function createTask() {
-    if (!uid || !ttitle || !tdeadline) return;
+    if (!uid) return showErr("LINE User IDを入力してください");
+    if (!ttitle) return showErr("タスク名を入力してください");
+    if (!tdeadline) return showErr("期限を入力してください (YYYY-MM-DD HH:mm)");
     const body = {
       line_user_id: uid,
       title: ttitle,
       deadline: tdeadline,
-      project_id: pid,
+      project_id: typeof pid === "number" ? pid : null,
     };
     const r = await fetch("/api/tasks", {
       method: "POST",
       headers: await h(),
       body: JSON.stringify(body),
     });
-    if (!r.ok) return;
+    if (!r.ok) {
+      let d = "";
+      try {
+        d = await r.text();
+      } catch {}
+      return showErr(`create task ${r.status} ${d}`);
+    }
     setTtitle("");
     loadTasks();
+    showMsg("タスクを追加しました");
   }
   async function updateTask(id, newStatus) {
     const r = await fetch(`/api/tasks/${id}`, {
@@ -115,7 +156,10 @@ export default function App() {
       headers: await h(),
       body: JSON.stringify({ status: newStatus }),
     });
-    if (!r.ok) return;
+    if (!r.ok) {
+      showErr(`update task ${r.status}`);
+      return;
+    }
     loadTasks();
   }
 
@@ -167,6 +211,32 @@ export default function App() {
         padding: 16,
       }}
     >
+      {(msg || err) && (
+        <div style={{ marginBottom: 8 }}>
+          {msg && (
+            <div
+              style={{
+                background: "#e6ffed",
+                border: "1px solid #b7eb8f",
+                padding: 8,
+              }}
+            >
+              {msg}
+            </div>
+          )}
+          {err && (
+            <div
+              style={{
+                background: "#fff1f0",
+                border: "1px solid #ffa39e",
+                padding: 8,
+              }}
+            >
+              {err}
+            </div>
+          )}
+        </div>
+      )}
       <header style={{ display: "flex", gap: 8, alignItems: "center" }}>
         <strong>Todo Planner (React)</strong>
         <input
@@ -212,6 +282,10 @@ export default function App() {
             ))}
           </ul>
           <div style={{ height: 1, background: "#eee", margin: "12px 0" }} />
+          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+            <button onClick={() => setPid(null)}>すべて</button>
+            <button onClick={() => setPid("none")}>未分類</button>
+          </div>
           <div
             style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8 }}
           >
