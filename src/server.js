@@ -68,6 +68,69 @@ app.post("/line/webhook", middleware(config), async (req, res) => {
           });
         }
 
+        // プロジェクト作成
+        if (cmd.type === 'project_add') {
+          db.run(
+            "INSERT INTO projects(line_user_id,name) VALUES(?,?)",
+            [u, cmd.name],
+            function () {
+              const id = this?.lastID;
+              client.replyMessage(e.replyToken, { type:'text', text:`P追加OK: ${id}: ${cmd.name}` });
+            }
+          );
+          return;
+        }
+
+        // プロジェクト一覧
+        if (cmd.type === 'project_list') {
+          db.all(
+            "SELECT id,name,status FROM projects WHERE line_user_id=? AND status='active' ORDER BY id DESC LIMIT 20",
+            [u],
+            (err, rows) => {
+              const text = err ? 'エラー' : (rows?.length ? rows.map(r=>`${r.id}: ${r.name}`).join('\n') : 'プロジェクトなし');
+              client.replyMessage(e.replyToken, { type:'text', text });
+            }
+          );
+          return;
+        }
+
+        // プロジェクトにタスク追加
+        if (cmd.type === 'add_project_task') {
+          db.get("SELECT id FROM projects WHERE id=? AND line_user_id=? AND status='active'", [cmd.projectId, u], (err, row) => {
+            if (err || !row) {
+              return client.replyMessage(e.replyToken, { type:'text', text:'プロジェクトが見つかりません' });
+            }
+            db.run(
+              "INSERT INTO tasks(line_user_id,title,deadline,project_id) VALUES (?,?,?,?)",
+              [u, cmd.title, cmd.deadline, cmd.projectId]
+            );
+            client.replyMessage(e.replyToken, { type:'text', text:`P${cmd.projectId} に登録OK: ${cmd.deadline} ${cmd.title}` });
+          });
+          return;
+        }
+
+        // プロジェクトのタスク一覧
+        if (cmd.type === 'list_project_tasks') {
+          db.all(
+            'SELECT id,title,deadline,status FROM tasks WHERE line_user_id=? AND project_id=? AND status="pending" ORDER BY deadline ASC LIMIT 20',
+            [u, cmd.projectId],
+            (err, rows) => {
+              const text = err ? 'エラー' : (rows?.length ? rows.map(r=>`${r.id}: [${r.deadline}] ${r.title}`).join('\n') : '未達タスクなし');
+              client.replyMessage(e.replyToken, { type:'text', text });
+            }
+          );
+          return;
+        }
+
+        // 長期: 追加（type='long'、progress=0）
+        if (cmd.type === 'add_long') {
+          db.run(
+            "INSERT INTO tasks(line_user_id,title,deadline,type,progress,last_progress_at) VALUES (?,?,?,?,?,datetime('now','localtime'))",
+            [u, cmd.title, cmd.deadline, 'long', 0]
+          );
+          return client.replyMessage(e.replyToken, { type:'text', text:`長期 追加OK: ${cmd.deadline} ${cmd.title}` });
+        }
+
         if (cmd.type === "list") {
           db.all(
             'SELECT id,title,deadline FROM tasks WHERE line_user_id=? AND status="pending" ORDER BY deadline ASC LIMIT 10',
@@ -86,6 +149,22 @@ app.post("/line/webhook", middleware(config), async (req, res) => {
           return;
         }
 
+        // 長期: 一覧（type='long' のみ）
+        if (cmd.type === 'list_long') {
+          db.all(
+            'SELECT id,title,progress,deadline,updated_at FROM tasks WHERE line_user_id=? AND type="long" AND status!="done" ORDER BY COALESCE(updated_at, created_at) DESC, id DESC LIMIT 10',
+            [u],
+            (err, rows) => {
+              let text = '長期なし';
+              if (!err && rows?.length) {
+                text = rows.map(r => `${r.id}: [${r.progress}%] ${r.title} (次の目安: ${r.deadline})`).join('\n');
+              }
+              client.replyMessage(e.replyToken, { type:'text', text });
+            }
+          );
+          return;
+        }
+
         if (cmd.type === "done") {
           db.run(
             'UPDATE tasks SET status="done" WHERE id=? AND line_user_id=?',
@@ -97,6 +176,15 @@ app.post("/line/webhook", middleware(config), async (req, res) => {
           });
         }
 
+        // 長期: 進捗更新 prog <id> <0-100>
+        if (cmd.type === 'progress') {
+          db.run(
+            'UPDATE tasks SET progress=?, updated_at=datetime(\'now\',\'localtime\'), last_progress_at=datetime(\'now\',\'localtime\') WHERE id=? AND line_user_id=? AND type=\'long\'',
+            [cmd.progress, cmd.id, u]
+          );
+          return client.replyMessage(e.replyToken, { type:'text', text:`進捗更新: ${cmd.id} → ${cmd.progress}%` });
+        }
+
         if (cmd.type === "error") {
           return client.replyMessage(e.replyToken, {
             type: "text",
@@ -106,7 +194,7 @@ app.post("/line/webhook", middleware(config), async (req, res) => {
 
         return client.replyMessage(e.replyToken, {
           type: "text",
-          text: "使い方: add YYYY-MM-DD HH:mm タイトル / ls / done {id} / watch here(グループで)",
+          text: "使い方: add YYYY-MM-DD HH:mm タイトル / ls / done {id} / watch here(グループで) / addl YYYY-MM-DD HH:mm タイトル / lsl / prog {id} {0-100%} / padd 名称 / pls / addp {pid} YYYY-MM-DD HH:mm タイトル / lsp {pid}",
         });
       })
     );

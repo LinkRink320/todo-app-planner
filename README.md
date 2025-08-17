@@ -1,6 +1,6 @@
 # Todo Planner（LINE + SQLite, MVP）
 
-LINE で「追加・一覧・完了」ができ、締切超過を自動検知して本人＋監視グループに通知する最小実行可能な ToDo アプリです。
+LINE で「追加・一覧・完了」ができ、締切超過を自動検知して本人＋監視グループに通知する最小実行可能な ToDo アプリです。30分前/5分前の事前リマインドも行います。短期タスクに加えて、長期目標（進捗%）とプロジェクト（長期の器）＋紐づくタスクの管理をサポートします。
 
 ## スタック
 
@@ -10,10 +10,13 @@ LINE で「追加・一覧・完了」ができ、締切超過を自動検知し
 - node-cron（締切チェック）
 - ngrok（ローカル Webhook 公開）
 
-## データスキーマ（MVP）
+## データスキーマ
 
-- tasks: id, line_user_id, title, deadline（YYYY-MM-DD HH:mm）, status（pending|done|failed）, created_at
+- tasks: id, line_user_id, title, deadline（YYYY-MM-DD HH:mm）, status（pending|done|failed）, created_at,
+  - type（short|long）, progress（0-100）, last_progress_at, updated_at
 - groups: id, group_id, owner_line_user_id, created_at
+ - projects: id, line_user_id, name, status（active|archived）, created_at, updated_at
+ - tasks.project_id: INTEGER（任意。プロジェクトに紐づくタスク）
 
 ## LINE コマンド（個チャ/グループ）
 
@@ -21,6 +24,19 @@ LINE で「追加・一覧・完了」ができ、締切超過を自動検知し
 - 一覧: `ls`
 - 完了: `done 3`
 - 監視グループ登録（グループ内で実行）: `watch here`
+
+長期目標:
+
+- 追加（長期）: `addl 2025-12-31 23:59 英語B2`（初期 progress=0%）
+- 一覧（長期）: `lsl`
+- 進捗更新: `prog 10 45%`（ID=10 の目標を 45% に更新）
+
+プロジェクト:
+
+- 追加: `padd 新規事業A`
+- 一覧: `pls`
+- タスク追加（プロジェクト配下）: `addp 3 2025-09-01 09:00 企画書ドラフト`
+- タスク一覧（プロジェクト配下）: `lsp 3`
 
 ## セットアップ
 
@@ -61,13 +77,21 @@ ngrok http 3000
    - 本人: `⚠️未達成「タイトル」（期限: YYYY-MM-DD HH:mm）`
    - 監視グループ: `📢未達成: タイトル（期限超過）`
      が Push 通知で届きます。
+6. 事前リマインド: 期限の30分前と5分前に、本人にリマインドが届きます（短期タスク）
 
-## 注意点（MVP の割り切り）
+長期目標の確認:
+
+1. 個チャで `addl 2025-12-31 23:59 英語B2`
+2. `lsl` で進捗一覧（最新更新順）
+3. `prog 1 30%` で更新 → `lsl` に反映
+
+## 注意点（割り切り）
 
 - 日時は `YYYY-MM-DD HH:mm` のみ対応（ローカル時刻）
 - 監視は「ユーザー 1 ↔ グループ 1」を想定（最新登録を採用）
 - 締切チェックは毎分実行（厳密な秒単位は考慮しません）
 - DB ファイルは既定で `./data.db`（`.env` の `DATABASE_PATH` で変更可）
+- リマインドは同一分に一致したものに送信（再起動直後などの重複送信は稀に起こる可能性あり）
 
 ## 環境変数
 
@@ -75,6 +99,7 @@ ngrok http 3000
 - LINE_CHANNEL_ACCESS_TOKEN
 - PORT（省略時 3000）
 - DATABASE_PATH（省略時 ./data.db）
+- TZ（省略時 未設定。クラウドでは `Asia/Tokyo` を推奨）
 
 ## ヘルスチェック
 
