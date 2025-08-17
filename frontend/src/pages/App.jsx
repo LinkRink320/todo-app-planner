@@ -19,7 +19,7 @@ export default function App() {
   const [projects, setProjects] = useState([]);
   const [pid, setPid] = useState(null);
   const [tasks, setTasks] = useState([]);
-  const [status, setStatus] = useState("pending");
+  const [status, setStatus] = useState(getSession("TASK_STATUS") || "all");
   const [pname, setPname] = useState("");
   const [ttitle, setTtitle] = useState("");
   const [tdeadline, setTdeadline] = useState("");
@@ -44,6 +44,10 @@ export default function App() {
   useEffect(() => {
     if (api && uid) loadTasks();
   }, [api, uid, pid, status]);
+
+  useEffect(() => {
+    setSession("TASK_STATUS", status);
+  }, [status]);
 
   async function h() {
     return { "x-api-key": api, "Content-Type": "application/json" };
@@ -114,7 +118,7 @@ export default function App() {
     } else if (pid) {
       qs.set("project_id", String(pid));
     }
-    if (status) qs.set("status", status);
+  if (status) qs.set("status", status);
     const r = await fetch(`/api/tasks?${qs.toString()}`, {
       headers: await h(),
     });
@@ -211,6 +215,7 @@ export default function App() {
       <header style={{ display: "flex", gap: 8, alignItems: "center" }}>
         <strong>Todo Planner (React)</strong>
         <span style={{ marginLeft: "auto", color: "#777" }}>
+          ユーザー: {String(uid).slice(0, 6)}…
           <a href="/login" style={{ marginRight: 12 }}>
             ログイン
           </a>
@@ -322,6 +327,20 @@ export default function App() {
           </div>
 
           <ul style={{ listStyle: "none", padding: 0, marginTop: 12 }}>
+            {tasks.length === 0 && (
+              <li style={{ color: "#777", padding: "8px 0" }}>
+                タスクがありません。以下を確認してください：
+                <ul>
+                  <li>ステータスを「すべて」にする</li>
+                  <li>「未分類」/「すべて」フィルタを切り替える</li>
+                  <li>ログインのLINE User ID が正しいか（右上のログインで再設定）</li>
+                </ul>
+                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                  <button onClick={() => setStatus("all")}>すべて表示</button>
+                  <button onClick={() => setPid(null)}>プロジェクト解除</button>
+                </div>
+              </li>
+            )}
             {tasks.map((t) => (
               <li
                 key={t.id}
