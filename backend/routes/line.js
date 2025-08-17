@@ -1,7 +1,7 @@
 const express = require("express");
 const { middleware, Client } = require("@line/bot-sdk");
 const db = require("../db");
-const { line } = require("../config");
+const { env, line } = require("../config");
 const { parse } = require("../commands");
 
 const router = express.Router();
@@ -14,10 +14,18 @@ router.post("/webhook", middleware(line), async (req, res) => {
   if (!events.length) return;
   try {
     await Promise.all(
-      events.map(async (e) => {
+  events.map(async (e) => {
         if (e.type !== "message" || e.message.type !== "text") return;
         const u = e.source.userId;
         const cmd = parse(e.message.text);
+        if (cmd.type === "app_url") {
+          // Prefer explicit PUBLIC_APP_URL; fallback to inferring from Host header
+          const host = req.headers["x-forwarded-host"] || req.headers.host;
+          const proto = (req.headers["x-forwarded-proto"] || "https").split(",")[0];
+          const base = env.PUBLIC_APP_URL || (host ? `${proto}://${host}` : null);
+          const text = base ? `アプリURL: ${base}` : "アプリURLが未設定です (PUBLIC_APP_URL を設定してください)";
+          return client.replyMessage(e.replyToken, { type: "text", text });
+        }
 
         if (cmd.type === "whoami") {
           return client.replyMessage(e.replyToken, {

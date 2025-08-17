@@ -19,6 +19,7 @@ function parse(text) {
   if (t === "ls") return { type: "list" };
   if (t === "lsl") return { type: "list_long" };
   if (t === "myid" || t === "id" || t === "whoami") return { type: "whoami" };
+  if (t.toLowerCase() === "url") return { type: "app_url" };
   if (t.startsWith("padd ")) {
     const name = t.slice(5).trim();
     if (!name) return { type: "error", msg: "書式: padd プロジェクト名" };

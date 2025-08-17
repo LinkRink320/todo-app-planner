@@ -8,6 +8,7 @@ module.exports = {
     TZ: process.env.TZ,
     DEFAULT_LINE_USER_ID: process.env.DEFAULT_LINE_USER_ID || null,
     DEFAULT_LINE_USER_NAME: process.env.DEFAULT_LINE_USER_NAME || null,
+  PUBLIC_APP_URL: process.env.PUBLIC_APP_URL || null,
   },
   line: {
     channelSecret: process.env.LINE_CHANNEL_SECRET,
