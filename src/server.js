@@ -12,9 +12,75 @@ const config = {
 };
 const client = new Client(config);
 const app = express();
+app.use(express.json());
 
 // ヘルスチェック
 app.get("/", (_, res) => res.send("ok"));
+app.get('/app', (req, res) => {
+  res.setHeader('Content-Type','text/html; charset=utf-8');
+  require('fs').createReadStream(require('path').join(__dirname, 'app.html')).pipe(res);
+});
+
+// ── Minimal REST API (optional): API_KEY required in header x-api-key
+const requireKey = (req, res, next) => {
+  const k = req.headers['x-api-key'];
+  if (!process.env.API_KEY) return res.status(403).json({ error: 'API disabled' });
+  if (k !== process.env.API_KEY) return res.status(401).json({ error: 'unauthorized' });
+  next();
+};
+
+// PDCA logs
+app.post('/api/logs', requireKey, (req, res) => {
+  const { line_user_id, project_id, task_id, type, note } = req.body||{};
+  if (!line_user_id || !type) return res.status(400).json({ error: 'line_user_id and type required' });
+  if (!['plan','do','check','act'].includes(String(type))) return res.status(400).json({ error: 'invalid type' });
+  db.run(
+    'INSERT INTO logs(line_user_id,project_id,task_id,type,note) VALUES (?,?,?,?,?)',
+    [line_user_id, project_id||null, task_id||null, String(type), note||null],
+    function(err){
+      if (err) return res.status(500).json({ error: 'db', detail: String(err) });
+      res.json({ id: this?.lastID });
+    }
+  );
+});
+
+app.get('/api/logs', requireKey, (req, res) => {
+  const { line_user_id, project_id, task_id, limit=50 } = req.query;
+  const conds = [];
+  const args = [];
+  if (line_user_id) { conds.push('line_user_id=?'); args.push(line_user_id); }
+  if (project_id) { conds.push('project_id=?'); args.push(project_id); }
+  if (task_id) { conds.push('task_id=?'); args.push(task_id); }
+  const where = conds.length ? ('WHERE '+conds.join(' AND ')) : '';
+  db.all(`SELECT * FROM logs ${where} ORDER BY id DESC LIMIT ?`, [...args, Number(limit)||50], (err, rows)=>{
+    if (err) return res.status(500).json({ error: 'db', detail: String(err) });
+    res.json(rows||[]);
+  });
+});
+
+// Browse basics
+app.get('/api/projects', requireKey, (req, res) => {
+  const { line_user_id } = req.query;
+  if (!line_user_id) return res.status(400).json({ error: 'line_user_id required' });
+  db.all("SELECT id,name,status,created_at,updated_at FROM projects WHERE line_user_id=? AND status='active' ORDER BY id DESC", [line_user_id], (e, rows)=>{
+    if (e) return res.status(500).json({ error: 'db', detail: String(e) });
+    res.json(rows||[]);
+  });
+});
+
+app.get('/api/tasks', requireKey, (req, res) => {
+  const { line_user_id, project_id, status='pending' } = req.query;
+  if (!line_user_id) return res.status(400).json({ error: 'line_user_id required' });
+  const conds = ['line_user_id=?'];
+  const args = [line_user_id];
+  if (project_id) { conds.push('project_id=?'); args.push(project_id); }
+  if (status) { conds.push('status=?'); args.push(status); }
+  const where = 'WHERE '+conds.join(' AND ');
+  db.all(`SELECT id,title,deadline,status,project_id FROM tasks ${where} ORDER BY deadline ASC`, args, (e, rows)=>{
+    if (e) return res.status(500).json({ error: 'db', detail: String(e) });
+    res.json(rows||[]);
+  });
+});
 
 // ★ここを差し替え（返信"こんにちは"→DB連動コマンド）
 app.post("/line/webhook", middleware(config), async (req, res) => {
@@ -69,66 +135,92 @@ app.post("/line/webhook", middleware(config), async (req, res) => {
         }
 
         // プロジェクト作成
-        if (cmd.type === 'project_add') {
+        if (cmd.type === "project_add") {
           db.run(
             "INSERT INTO projects(line_user_id,name) VALUES(?,?)",
             [u, cmd.name],
             function () {
               const id = this?.lastID;
-              client.replyMessage(e.replyToken, { type:'text', text:`P追加OK: ${id}: ${cmd.name}` });
+              client.replyMessage(e.replyToken, {
+                type: "text",
+                text: `P追加OK: ${id}: ${cmd.name}`,
+              });
             }
           );
           return;
         }
 
         // プロジェクト一覧
-        if (cmd.type === 'project_list') {
+        if (cmd.type === "project_list") {
           db.all(
             "SELECT id,name,status FROM projects WHERE line_user_id=? AND status='active' ORDER BY id DESC LIMIT 20",
             [u],
             (err, rows) => {
-              const text = err ? 'エラー' : (rows?.length ? rows.map(r=>`${r.id}: ${r.name}`).join('\n') : 'プロジェクトなし');
-              client.replyMessage(e.replyToken, { type:'text', text });
+              const text = err
+                ? "エラー"
+                : rows?.length
+                ? rows.map((r) => `${r.id}: ${r.name}`).join("\n")
+                : "プロジェクトなし";
+              client.replyMessage(e.replyToken, { type: "text", text });
             }
           );
           return;
         }
 
         // プロジェクトにタスク追加
-        if (cmd.type === 'add_project_task') {
-          db.get("SELECT id FROM projects WHERE id=? AND line_user_id=? AND status='active'", [cmd.projectId, u], (err, row) => {
-            if (err || !row) {
-              return client.replyMessage(e.replyToken, { type:'text', text:'プロジェクトが見つかりません' });
+        if (cmd.type === "add_project_task") {
+          db.get(
+            "SELECT id FROM projects WHERE id=? AND line_user_id=? AND status='active'",
+            [cmd.projectId, u],
+            (err, row) => {
+              if (err || !row) {
+                return client.replyMessage(e.replyToken, {
+                  type: "text",
+                  text: "プロジェクトが見つかりません",
+                });
+              }
+              db.run(
+                "INSERT INTO tasks(line_user_id,title,deadline,project_id) VALUES (?,?,?,?)",
+                [u, cmd.title, cmd.deadline, cmd.projectId]
+              );
+              client.replyMessage(e.replyToken, {
+                type: "text",
+                text: `P${cmd.projectId} に登録OK: ${cmd.deadline} ${cmd.title}`,
+              });
             }
-            db.run(
-              "INSERT INTO tasks(line_user_id,title,deadline,project_id) VALUES (?,?,?,?)",
-              [u, cmd.title, cmd.deadline, cmd.projectId]
-            );
-            client.replyMessage(e.replyToken, { type:'text', text:`P${cmd.projectId} に登録OK: ${cmd.deadline} ${cmd.title}` });
-          });
+          );
           return;
         }
 
         // プロジェクトのタスク一覧
-        if (cmd.type === 'list_project_tasks') {
+        if (cmd.type === "list_project_tasks") {
           db.all(
             'SELECT id,title,deadline,status FROM tasks WHERE line_user_id=? AND project_id=? AND status="pending" ORDER BY deadline ASC LIMIT 20',
             [u, cmd.projectId],
             (err, rows) => {
-              const text = err ? 'エラー' : (rows?.length ? rows.map(r=>`${r.id}: [${r.deadline}] ${r.title}`).join('\n') : '未達タスクなし');
-              client.replyMessage(e.replyToken, { type:'text', text });
+              const text = err
+                ? "エラー"
+                : rows?.length
+                ? rows
+                    .map((r) => `${r.id}: [${r.deadline}] ${r.title}`)
+                    .join("\n")
+                : "未達タスクなし";
+              client.replyMessage(e.replyToken, { type: "text", text });
             }
           );
           return;
         }
 
         // 長期: 追加（type='long'、progress=0）
-        if (cmd.type === 'add_long') {
+        if (cmd.type === "add_long") {
           db.run(
             "INSERT INTO tasks(line_user_id,title,deadline,type,progress,last_progress_at) VALUES (?,?,?,?,?,datetime('now','localtime'))",
-            [u, cmd.title, cmd.deadline, 'long', 0]
+            [u, cmd.title, cmd.deadline, "long", 0]
           );
-          return client.replyMessage(e.replyToken, { type:'text', text:`長期 追加OK: ${cmd.deadline} ${cmd.title}` });
+          return client.replyMessage(e.replyToken, {
+            type: "text",
+            text: `長期 追加OK: ${cmd.deadline} ${cmd.title}`,
+          });
         }
 
         if (cmd.type === "list") {
@@ -150,16 +242,21 @@ app.post("/line/webhook", middleware(config), async (req, res) => {
         }
 
         // 長期: 一覧（type='long' のみ）
-        if (cmd.type === 'list_long') {
+        if (cmd.type === "list_long") {
           db.all(
             'SELECT id,title,progress,deadline,updated_at FROM tasks WHERE line_user_id=? AND type="long" AND status!="done" ORDER BY COALESCE(updated_at, created_at) DESC, id DESC LIMIT 10',
             [u],
             (err, rows) => {
-              let text = '長期なし';
+              let text = "長期なし";
               if (!err && rows?.length) {
-                text = rows.map(r => `${r.id}: [${r.progress}%] ${r.title} (次の目安: ${r.deadline})`).join('\n');
+                text = rows
+                  .map(
+                    (r) =>
+                      `${r.id}: [${r.progress}%] ${r.title} (次の目安: ${r.deadline})`
+                  )
+                  .join("\n");
               }
-              client.replyMessage(e.replyToken, { type:'text', text });
+              client.replyMessage(e.replyToken, { type: "text", text });
             }
           );
           return;
@@ -177,12 +274,15 @@ app.post("/line/webhook", middleware(config), async (req, res) => {
         }
 
         // 長期: 進捗更新 prog <id> <0-100>
-        if (cmd.type === 'progress') {
+        if (cmd.type === "progress") {
           db.run(
-            'UPDATE tasks SET progress=?, updated_at=datetime(\'now\',\'localtime\'), last_progress_at=datetime(\'now\',\'localtime\') WHERE id=? AND line_user_id=? AND type=\'long\'',
+            "UPDATE tasks SET progress=?, updated_at=datetime('now','localtime'), last_progress_at=datetime('now','localtime') WHERE id=? AND line_user_id=? AND type='long'",
             [cmd.progress, cmd.id, u]
           );
-          return client.replyMessage(e.replyToken, { type:'text', text:`進捗更新: ${cmd.id} → ${cmd.progress}%` });
+          return client.replyMessage(e.replyToken, {
+            type: "text",
+            text: `進捗更新: ${cmd.id} → ${cmd.progress}%`,
+          });
         }
 
         if (cmd.type === "error") {
@@ -223,7 +323,10 @@ cron.schedule("* * * * *", async () => {
   )} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
 
   // 30分前/5分前リマインド
-  const fmt = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const fmt = (d) =>
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(
+      d.getHours()
+    )}:${pad(d.getMinutes())}`;
   const t30 = new Date(now.getTime() + 30 * 60 * 1000);
   const t05 = new Date(now.getTime() + 5 * 60 * 1000);
   const target30 = fmt(t30);
@@ -237,13 +340,17 @@ cron.schedule("* * * * *", async () => {
         if (err || !rows?.length) return;
         for (const r of rows) {
           const text = `⏰${label}リマインド「${r.title}」(期限: ${r.deadline})`;
-          try { await client.pushMessage(r.line_user_id, { type: 'text', text }); } catch (e) { console.error('[PUSH remind ERROR]', e?.response?.data || e); }
+          try {
+            await client.pushMessage(r.line_user_id, { type: "text", text });
+          } catch (e) {
+            console.error("[PUSH remind ERROR]", e?.response?.data || e);
+          }
         }
       }
     );
   };
-  sendReminders(target30, '30分前');
-  sendReminders(target05, '5分前');
+  sendReminders(target30, "30分前");
+  sendReminders(target05, "5分前");
   db.all(
     'SELECT id, line_user_id, title, deadline FROM tasks WHERE status="pending" AND deadline <= ? ORDER BY deadline ASC LIMIT 100',
     [current],

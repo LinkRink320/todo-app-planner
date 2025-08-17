@@ -1,6 +1,6 @@
 # Todo Planner（LINE + SQLite, MVP）
 
-LINE で「追加・一覧・完了」ができ、締切超過を自動検知して本人＋監視グループに通知する最小実行可能な ToDo アプリです。30分前/5分前の事前リマインドも行います。短期タスクに加えて、長期目標（進捗%）とプロジェクト（長期の器）＋紐づくタスクの管理をサポートします。
+LINE で「追加・一覧・完了」ができ、締切超過を自動検知して本人＋監視グループに通知する最小実行可能な ToDo アプリです。30 分前/5 分前の事前リマインドも行います。短期タスクに加えて、長期目標（進捗%）とプロジェクト（長期の器）＋紐づくタスクの管理をサポートします。
 
 ## スタック
 
@@ -9,14 +9,15 @@ LINE で「追加・一覧・完了」ができ、締切超過を自動検知し
 - sqlite3（ローカル DB）
 - node-cron（締切チェック）
 - ngrok（ローカル Webhook 公開）
+- 最小REST + 簡易Web UI（PDCA ログ）
 
 ## データスキーマ
 
 - tasks: id, line_user_id, title, deadline（YYYY-MM-DD HH:mm）, status（pending|done|failed）, created_at,
   - type（short|long）, progress（0-100）, last_progress_at, updated_at
 - groups: id, group_id, owner_line_user_id, created_at
- - projects: id, line_user_id, name, status（active|archived）, created_at, updated_at
- - tasks.project_id: INTEGER（任意。プロジェクトに紐づくタスク）
+- projects: id, line_user_id, name, status（active|archived）, created_at, updated_at
+- tasks.project_id: INTEGER（任意。プロジェクトに紐づくタスク）
 
 ## LINE コマンド（個チャ/グループ）
 
@@ -77,7 +78,7 @@ ngrok http 3000
    - 本人: `⚠️未達成「タイトル」（期限: YYYY-MM-DD HH:mm）`
    - 監視グループ: `📢未達成: タイトル（期限超過）`
      が Push 通知で届きます。
-6. 事前リマインド: 期限の30分前と5分前に、本人にリマインドが届きます（短期タスク）
+6. 事前リマインド: 期限の 30 分前と 5 分前に、本人にリマインドが届きます（短期タスク）
 
 長期目標の確認:
 
@@ -100,10 +101,20 @@ ngrok http 3000
 - PORT（省略時 3000）
 - DATABASE_PATH（省略時 ./data.db）
 - TZ（省略時 未設定。クラウドでは `Asia/Tokyo` を推奨）
+- API_KEY（REST/簡易UI 用。任意）
 
 ## ヘルスチェック
 
 - GET `/` → `ok`
+- GET `/app` → 簡易PDCA UI（.env の API_KEY を `x-api-key` に設定して利用）
+
+## 最小 REST（PDCA）
+
+- POST `/api/logs`（要 `x-api-key`）
+  - body: { line_user_id: string, project_id?: number, task_id?: number, type: 'plan'|'do'|'check'|'act', note?: string }
+- GET `/api/logs?line_user_id=...&project_id=...&task_id=...&limit=50`（要 `x-api-key`）
+- GET `/api/projects?line_user_id=...`（要 `x-api-key`）
+- GET `/api/tasks?line_user_id=...&project_id=...&status=pending`（要 `x-api-key`）
 
 ## デプロイ（参考）
 

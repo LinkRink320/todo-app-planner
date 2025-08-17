@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Todo Planner - PDCA</title>
+  <style>
+    body{font-family:system-ui, sans-serif; margin:24px;}
+    input,select,textarea{padding:8px; margin:4px 0; width:100%; max-width:520px;}
+    button{padding:8px 12px;}
+    .row{max-width:560px;}
+    .list{white-space:pre-wrap; background:#fafafa; padding:8px; border:1px solid #eee;}
+  </style>
+  <script>
+    async function submitLog(e){
+      e.preventDefault();
+      const api = document.getElementById('api').value.trim();
+      const line_user_id = document.getElementById('uid').value.trim();
+      const project_id = document.getElementById('pid').value.trim();
+      const task_id = document.getElementById('tid').value.trim();
+      const type = document.getElementById('type').value;
+      const note = document.getElementById('note').value;
+      const r = await fetch('/api/logs', {method:'POST', headers:{'Content-Type':'application/json','x-api-key':api}, body:JSON.stringify({line_user_id, project_id: project_id||null, task_id: task_id||null, type, note})});
+      const j = await r.json();
+      alert('saved: '+JSON.stringify(j));
+    }
+    async function loadProjects(){
+      const api = document.getElementById('api').value.trim();
+      const line_user_id = document.getElementById('uid').value.trim();
+      const r = await fetch('/api/projects?line_user_id='+encodeURIComponent(line_user_id), {headers:{'x-api-key':api}});
+      document.getElementById('projects').textContent = await r.text();
+    }
+    async function loadTasks(){
+      const api = document.getElementById('api').value.trim();
+      const line_user_id = document.getElementById('uid').value.trim();
+      const pid = document.getElementById('pid').value.trim();
+      const url = '/api/tasks?line_user_id='+encodeURIComponent(line_user_id)+(pid?('&project_id='+encodeURIComponent(pid)):'');
+      const r = await fetch(url, {headers:{'x-api-key':api}});
+      document.getElementById('tasks').textContent = await r.text();
+    }
+  </script>
+  </head>
+<body>
+  <h1>Todo Planner - PDCA</h1>
+  <div class="row">
+    <label>API Key <input id="api" placeholder="set .env API_KEY" /></label>
+    <label>LINE User ID <input id="uid" placeholder="Uxxxxxxxxx... (必須)" /></label>
+    <label>Project ID <input id="pid" placeholder="数値（任意）" /></label>
+    <label>Task ID <input id="tid" placeholder="数値（任意）" /></label>
+    <label>Type
+      <select id="type">
+        <option value="plan">PLAN</option>
+        <option value="do">DO</option>
+        <option value="check">CHECK</option>
+        <option value="act">ACT</option>
+      </select>
+    </label>
+    <label>Note<textarea id="note" rows="4" placeholder="メモ"></textarea></label>
+    <button onclick="submitLog(event)">PDCA ログ保存</button>
+  </div>
+
+  <h2>一覧</h2>
+  <div class="row">
+    <button onclick="loadProjects()">プロジェクト取得</button>
+    <div id="projects" class="list"></div>
+  </div>
+  <div class="row">
+    <button onclick="loadTasks()">タスク取得（任意で Project ID 指定）</button>
+    <div id="tasks" class="list"></div>
+  </div>
+</body>
+</html>
