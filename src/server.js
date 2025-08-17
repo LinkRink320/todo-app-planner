@@ -133,6 +133,29 @@ cron.schedule("* * * * *", async () => {
   const current = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(
     now.getDate()
   )} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+
+  // 30分前/5分前リマインド
+  const fmt = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const t30 = new Date(now.getTime() + 30 * 60 * 1000);
+  const t05 = new Date(now.getTime() + 5 * 60 * 1000);
+  const target30 = fmt(t30);
+  const target05 = fmt(t05);
+
+  const sendReminders = (target, label) => {
+    db.all(
+      'SELECT id, line_user_id, title, deadline FROM tasks WHERE status="pending" AND deadline = ? ORDER BY id ASC LIMIT 100',
+      [target],
+      async (err, rows) => {
+        if (err || !rows?.length) return;
+        for (const r of rows) {
+          const text = `⏰${label}リマインド「${r.title}」(期限: ${r.deadline})`;
+          try { await client.pushMessage(r.line_user_id, { type: 'text', text }); } catch (e) { console.error('[PUSH remind ERROR]', e?.response?.data || e); }
+        }
+      }
+    );
+  };
+  sendReminders(target30, '30分前');
+  sendReminders(target05, '5分前');
   db.all(
     'SELECT id, line_user_id, title, deadline FROM tasks WHERE status="pending" AND deadline <= ? ORDER BY deadline ASC LIMIT 100',
     [current],

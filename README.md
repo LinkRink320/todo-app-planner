@@ -84,3 +84,28 @@ ngrok http 3000
 
 - API: Render/Railway 等でデプロイし、Webhook URL を本番に設定
 - フロントエンド（Next.js）は次スプリントで追加予定
+
+## Railway へのデプロイ（推奨）
+
+1. GitHub 連携でこのリポジトリを選択して新規 Service を作成
+2. Variables（環境変数）を追加
+
+- LINE_CHANNEL_SECRET
+- LINE_CHANNEL_ACCESS_TOKEN
+- PORT=3000
+- TZ=Asia/Tokyo
+- DATABASE_PATH=/data/data.db
+
+3. Volumes を追加（例: Name=data, Mount Path=/data, Size=1GB）
+4. スケール設定でインスタンス数を 1 に固定（Auto-scale OFF）
+5. Start Command は package.json の `start`（= `node src/server.js`）が使われます
+6. デプロイ完了後の URL を LINE の Webhook に設定
+
+- https://<railway-url>/line/webhook
+
+7. 動作確認（LINE で add / ls / done、グループで watch here）
+
+注意:
+
+- 無料枠ではスリープの可能性あり → 即応性が必要なら有料プランや Keep-Alive を検討
+- Volume 未設定だと SQLite ファイルが消えるため、必ず /data にマウントし DATABASE_PATH を合わせる
