@@ -43,14 +43,7 @@ export default function Login() {
   if (loading) return <div style={{ padding: 24 }}>Loading…</div>;
 
   return (
-    <div
-      style={{
-        fontFamily: "system-ui, sans-serif",
-        maxWidth: 480,
-        margin: "0 auto",
-        padding: 24,
-      }}
-    >
+    <div className="container" style={{ maxWidth: 520 }}>
       <h2>ログイン</h2>
       <p style={{ color: "#555" }}>
         API_KEY と LINE User ID を入力してください。

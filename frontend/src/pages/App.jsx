@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 function getSession(k) {
   try {
@@ -27,6 +27,12 @@ export default function App() {
   const [profileName, setProfileName] = useState("");
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  const isMobile = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    return window.matchMedia && window.matchMedia("(max-width: 800px)").matches;
+  }, []);
 
   useEffect(() => {
     setSession("API_KEY", api);
@@ -132,10 +138,15 @@ export default function App() {
     if (!uid) return showErr("LINE User IDを入力してください");
     if (!ttitle) return showErr("タスク名を入力してください");
     if (!tdeadline) return showErr("期限を入力してください (YYYY-MM-DD HH:mm)");
+    // If using input type="datetime-local", value is like "2025-09-01T09:00"; convert to "YYYY-MM-DD HH:mm"
+    let deadlineOut = tdeadline;
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(deadlineOut)) {
+      deadlineOut = deadlineOut.replace("T", " ");
+    }
     const body = {
       line_user_id: uid,
       title: ttitle,
-      deadline: tdeadline,
+      deadline: deadlineOut,
       project_id: typeof pid === "number" ? pid : null,
     };
     const r = await fetch("/api/tasks", {
@@ -178,43 +189,21 @@ export default function App() {
   }
 
   return (
-    <div
-      style={{
-        fontFamily: "system-ui, sans-serif",
-        maxWidth: 1000,
-        margin: "0 auto",
-        padding: 16,
-      }}
-    >
+    <div className="container">
       {(msg || err) && (
         <div style={{ marginBottom: 8 }}>
-          {msg && (
-            <div
-              style={{
-                background: "#e6ffed",
-                border: "1px solid #b7eb8f",
-                padding: 8,
-              }}
-            >
-              {msg}
-            </div>
-          )}
-          {err && (
-            <div
-              style={{
-                background: "#fff1f0",
-                border: "1px solid #ffa39e",
-                padding: 8,
-              }}
-            >
-              {err}
-            </div>
-          )}
+          {msg && <div className="alert success">{msg}</div>}
+          {err && <div className="alert error">{err}</div>}
         </div>
       )}
-      <header style={{ display: "flex", gap: 8, alignItems: "center" }}>
+      <header className="app-header">
+        {isMobile && (
+          <button className="ghost" onClick={() => setDrawerOpen(true)}>
+            メニュー
+          </button>
+        )}
         <strong>Todo Planner (React)</strong>
-        <span style={{ marginLeft: "auto", color: "#777" }}>
+        <span className="user">
           ユーザー: {String(uid).slice(0, 6)}…
           <a href="/login" style={{ marginRight: 12 }}>
             ログイン
@@ -232,50 +221,44 @@ export default function App() {
           </button>
         </span>
       </header>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "260px 1fr",
-          gap: 16,
-          marginTop: 16,
-        }}
-      >
-        <aside>
-          <div style={{ fontWeight: 600, marginBottom: 8 }}>プロジェクト</div>
-          <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-            {projects.map((p) => (
-              <li
-                key={p.id}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  padding: "8px 0",
-                  borderBottom: "1px solid #eee",
-                }}
-              >
-                <div>{p.name}</div>
-                <button onClick={() => setPid(p.id)}>開く</button>
-              </li>
-            ))}
-          </ul>
-          <div style={{ height: 1, background: "#eee", margin: "12px 0" }} />
-          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-            <button onClick={() => setPid(null)}>すべて</button>
-            <button onClick={() => setPid("none")}>未分類</button>
-          </div>
-          <div
-            style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8 }}
-          >
-            <input
-              placeholder="新規プロジェクト名"
-              value={pname}
-              onChange={(e) => setPname(e.target.value)}
-            />
-            <button onClick={createProject}>追加</button>
-          </div>
-        </aside>
-        <main>
+      <div className="layout">
+        {/* Desktop sidebar */}
+        {!isMobile && (
+          <aside className="panel">
+            <div style={{ fontWeight: 600, marginBottom: 8 }}>プロジェクト</div>
+            <ul className="list">
+              {projects.map((p) => (
+                <li
+                  key={p.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "8px 0",
+                    borderBottom: "1px solid #eee",
+                  }}
+                >
+                  <div>{p.name}</div>
+                  <button onClick={() => setPid(p.id)}>開く</button>
+                </li>
+              ))}
+            </ul>
+            <div style={{ height: 1, background: "#eee", margin: "12px 0" }} />
+            <div className="row">
+              <button onClick={() => setPid(null)}>すべて</button>
+              <button onClick={() => setPid("none")}>未分類</button>
+            </div>
+            <div className="grid-2">
+              <input
+                placeholder="新規プロジェクト名"
+                value={pname}
+                onChange={(e) => setPname(e.target.value)}
+              />
+              <button onClick={createProject}>追加</button>
+            </div>
+          </aside>
+        )}
+        <main className="panel">
           <div
             style={{
               display: "flex",
@@ -302,31 +285,25 @@ export default function App() {
             </div>
           </div>
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr auto",
-              gap: 8,
-              marginTop: 8,
-            }}
-          >
+          <div className="grid-2" style={{ marginTop: 8 }}>
             <input
               placeholder="タスク名"
               value={ttitle}
               onChange={(e) => setTtitle(e.target.value)}
             />
             <input
+              type="datetime-local"
               placeholder="2025-09-01 09:00"
               value={tdeadline}
               onChange={(e) => setTdeadline(e.target.value)}
             />
           </div>
-          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+          <div className="row stack-sm" style={{ marginTop: 8 }}>
             <button onClick={createTask}>タスク追加</button>
             <button onClick={loadTasks}>更新</button>
           </div>
 
-          <ul style={{ listStyle: "none", padding: 0, marginTop: 12 }}>
+          <ul className="list" style={{ marginTop: 12 }}>
             {tasks.length === 0 && (
               <li style={{ color: "#777", padding: "8px 0" }}>
                 タスクがありません。以下を確認してください：
@@ -337,7 +314,7 @@ export default function App() {
                     ログインのLINE User ID が正しいか（右上のログインで再設定）
                   </li>
                 </ul>
-                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <div className="row stack-sm" style={{ marginTop: 8 }}>
                   <button onClick={() => setStatus("all")}>すべて表示</button>
                   <button onClick={() => setPid(null)}>プロジェクト解除</button>
                 </div>
@@ -376,6 +353,48 @@ export default function App() {
           </ul>
         </main>
       </div>
+      {/* Mobile drawer for projects */}
+      {isMobile && drawerOpen && (
+        <>
+          <div className="mobile-overlay" onClick={() => setDrawerOpen(false)} />
+          <aside className="mobile-drawer open">
+            <div className="row" style={{ justifyContent: "space-between" }}>
+              <div style={{ fontWeight: 700 }}>プロジェクト</div>
+              <button className="ghost" onClick={() => setDrawerOpen(false)}>
+                閉じる
+              </button>
+            </div>
+            <ul className="list">
+              {projects.map((p) => (
+                <li key={p.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div>{p.name}</div>
+                  <button
+                    onClick={() => {
+                      setPid(p.id);
+                      setDrawerOpen(false);
+                    }}
+                  >
+                    開く
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <div style={{ height: 1, background: "#eee", margin: "12px 0" }} />
+            <div className="row">
+              <button onClick={() => { setPid(null); setDrawerOpen(false); }}>すべて</button>
+              <button onClick={() => { setPid("none"); setDrawerOpen(false); }}>未分類</button>
+            </div>
+            <div className="grid-2" style={{ marginTop: 8 }}>
+              <input
+                placeholder="新規プロジェクト名"
+                value={pname}
+                onChange={(e) => setPname(e.target.value)}
+              />
+              <button onClick={() => { createProject(); }}>追加</button>
+            </div>
+          </aside>
+        </>
+      )}
     </div>
   );
 }
