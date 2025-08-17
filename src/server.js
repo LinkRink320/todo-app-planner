@@ -39,8 +39,8 @@ app.use("/line", lineRouter);
 const reactDist = path.join(__dirname, "..", "frontend", "dist");
 if (fs.existsSync(reactDist)) {
   app.use(express.static(reactDist));
-  // Express v5 uses path-to-regexp v6; replace deprecated "/*" with a regex catch-all
-  app.get(["/", "/app", "/login", "/:path(.*)"], (req, res) => {
+  // Express v5 uses path-to-regexp v6; use param with '*' modifier for catch-all
+  app.get(["/", "/app", "/login", "/:path*"], (req, res) => {
     res.sendFile(path.join(reactDist, "index.html"));
   });
 } else {
