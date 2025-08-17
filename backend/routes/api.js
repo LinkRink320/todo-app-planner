@@ -114,7 +114,7 @@ router.get("/tasks", (req, res) => {
   const where = "WHERE " + conds.join(" AND ");
   const lim = Math.min(Math.max(parseInt(limit || 200, 10) || 200, 1), 1000);
   db.all(
-    `SELECT id,title,deadline,status,project_id,type,progress FROM tasks ${where} ORDER BY deadline ASC LIMIT ?`,
+    `SELECT id,title,deadline,status,project_id,type,progress FROM tasks ${where} ORDER BY CASE WHEN deadline IS NULL THEN 1 ELSE 0 END, deadline ASC LIMIT ?`,
     [...args, lim],
     (e, rows) => {
       if (e) return res.status(500).json({ error: "db", detail: String(e) });
@@ -125,13 +125,11 @@ router.get("/tasks", (req, res) => {
 
 router.post("/tasks", (req, res) => {
   const { line_user_id, title, deadline, project_id } = req.body || {};
-  if (!line_user_id || !title || !deadline)
-    return res
-      .status(400)
-      .json({ error: "line_user_id, title, deadline required" });
+  if (!line_user_id || !title)
+    return res.status(400).json({ error: "line_user_id and title required" });
   db.run(
     "INSERT INTO tasks(line_user_id,title,deadline,project_id) VALUES (?,?,?,?)",
-    [line_user_id, title, deadline, project_id || null],
+    [line_user_id, title, deadline || null, project_id || null],
     function (err) {
       if (err)
         return res.status(500).json({ error: "db", detail: String(err) });

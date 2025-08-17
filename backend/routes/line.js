@@ -65,11 +65,11 @@ router.post("/webhook", middleware(line), async (req, res) => {
         if (cmd.type === "add") {
           db.run(
             "INSERT INTO tasks(line_user_id,title,deadline) VALUES (?,?,?)",
-            [u, cmd.title, cmd.deadline]
+            [u, cmd.title, cmd.deadline || null]
           );
           return client.replyMessage(e.replyToken, {
             type: "text",
-            text: `登録OK: ${cmd.deadline} ${cmd.title}`,
+            text: `登録OK: ${(cmd.deadline || "(期限なし)")} ${cmd.title}`,
           });
         }
 
@@ -116,11 +116,11 @@ router.post("/webhook", middleware(line), async (req, res) => {
                 });
               db.run(
                 "INSERT INTO tasks(line_user_id,title,deadline,project_id) VALUES (?,?,?,?)",
-                [u, cmd.title, cmd.deadline, cmd.projectId]
+                [u, cmd.title, cmd.deadline || null, cmd.projectId]
               );
               client.replyMessage(e.replyToken, {
                 type: "text",
-                text: `P${cmd.projectId} に登録OK: ${cmd.deadline} ${cmd.title}`,
+                text: `P${cmd.projectId} に登録OK: ${(cmd.deadline || "(期限なし)")} ${cmd.title}`,
               });
             }
           );
@@ -129,14 +129,14 @@ router.post("/webhook", middleware(line), async (req, res) => {
 
         if (cmd.type === "list_project_tasks") {
           db.all(
-            'SELECT id,title,deadline,status FROM tasks WHERE line_user_id=? AND project_id=? AND status="pending" ORDER BY deadline ASC LIMIT 20',
+            'SELECT id,title,deadline,status FROM tasks WHERE line_user_id=? AND project_id=? AND status="pending" ORDER BY CASE WHEN deadline IS NULL THEN 1 ELSE 0 END, deadline ASC LIMIT 20',
             [u, cmd.projectId],
             (err, rows) => {
               const text = err
                 ? "エラー"
                 : rows?.length
                 ? rows
-                    .map((r) => `${r.id}: [${r.deadline}] ${r.title}`)
+                    .map((r) => `${r.id}: [${r.deadline || "-"}] ${r.title}`)
                     .join("\n")
                 : "未達タスクなし";
               client.replyMessage(e.replyToken, { type: "text", text });
@@ -148,24 +148,24 @@ router.post("/webhook", middleware(line), async (req, res) => {
         if (cmd.type === "add_long") {
           db.run(
             "INSERT INTO tasks(line_user_id,title,deadline,type,progress,last_progress_at) VALUES (?,?,?,?,?,datetime('now','localtime'))",
-            [u, cmd.title, cmd.deadline, "long", 0]
+            [u, cmd.title, cmd.deadline || null, "long", 0]
           );
           return client.replyMessage(e.replyToken, {
             type: "text",
-            text: `長期 追加OK: ${cmd.deadline} ${cmd.title}`,
+            text: `長期 追加OK: ${(cmd.deadline || "(期限なし)")} ${cmd.title}`,
           });
         }
 
         if (cmd.type === "list") {
           db.all(
-            'SELECT id,title,deadline FROM tasks WHERE line_user_id=? AND status="pending" ORDER BY deadline ASC LIMIT 10',
+            'SELECT id,title,deadline FROM tasks WHERE line_user_id=? AND status="pending" ORDER BY CASE WHEN deadline IS NULL THEN 1 ELSE 0 END, deadline ASC LIMIT 10',
             [u],
             (err, rows) => {
               const text = err
                 ? "エラー"
                 : rows.length
                 ? rows
-                    .map((r) => `${r.id}: [${r.deadline}] ${r.title}`)
+                    .map((r) => `${r.id}: [${r.deadline || "-"}] ${r.title}`)
                     .join("\n")
                 : "未達タスクなし";
               client.replyMessage(e.replyToken, { type: "text", text });
@@ -226,7 +226,7 @@ router.post("/webhook", middleware(line), async (req, res) => {
         return client.replyMessage(e.replyToken, {
           type: "text",
           text:
-            "使い方: whoami(=myid/id) / URL / add YYYY-MM-DD HH:mm タイトル / ls / done {id} / watch here(グループで) / addl YYYY-MM-DD HH:mm タイトル / lsl / prog {id} {0-100%} / padd 名称 / pls / addp {pid} YYYY-MM-DD HH:mm タイトル / lsp {pid}",
+            "使い方: whoami(=myid/id) / URL / add [YYYY-MM-DD HH:mm] タイトル / ls / done {id} / watch here(グループで) / addl [YYYY-MM-DD HH:mm] タイトル / lsl / prog {id} {0-100%} / padd 名称 / pls / addp {pid} [YYYY-MM-DD HH:mm] タイトル / lsp {pid}",
         });
       })
     );

@@ -137,10 +137,10 @@ export default function App() {
   async function createTask() {
     if (!uid) return showErr("LINE User IDを入力してください");
     if (!ttitle) return showErr("タスク名を入力してください");
-    if (!tdeadline) return showErr("期限を入力してください (YYYY-MM-DD HH:mm)");
+  // deadline is optional
     // If using input type="datetime-local", value is like "2025-09-01T09:00"; convert to "YYYY-MM-DD HH:mm"
     let deadlineOut = tdeadline;
-    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(deadlineOut)) {
+    if (deadlineOut && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(deadlineOut)) {
       deadlineOut = deadlineOut.replace("T", " ");
     }
     const body = {
@@ -293,7 +293,7 @@ export default function App() {
             />
             <input
               type="datetime-local"
-              placeholder="2025-09-01 09:00"
+              placeholder="任意: 2025-09-01 09:00"
               value={tdeadline}
               onChange={(e) => setTdeadline(e.target.value)}
             />
@@ -341,7 +341,7 @@ export default function App() {
                 <div style={{ flex: 1 }}>
                   <div>{t.title}</div>
                   <div style={{ color: "#777", fontSize: 12 }}>
-                    {t.deadline} ・ {t.status}
+                    {(t.deadline || "-")} ・ {t.status}
                     {t.type === "long" && typeof t.progress === "number"
                       ? ` ・ 進捗 ${t.progress}%`
                       : ""}
