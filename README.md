@@ -39,6 +39,10 @@ LINE で「追加・一覧・完了」ができ、締切超過を自動検知し
 - タスク追加（プロジェクト配下）: `addp 3 2025-09-01 09:00 企画書ドラフト`
 - タスク一覧（プロジェクト配下）: `lsp 3`
 
+ユーザーIDの確認:
+
+- `whoami`（または `myid` / `id`）を個チャで送ると、自分の LINE User ID が返信されます。/app の「LINE User ID」欄にも同じIDを入力してください。
+
 ## セットアップ
 
 1. 環境変数を設定
@@ -109,6 +113,7 @@ ngrok http 3000
 
 - GET `/` → `ok`
 - GET `/app` → 簡易PDCA UI（.env の API_KEY を `x-api-key` に設定して利用）
+- LINE User ID は `whoami` コマンドで取得可能。
 - GET `/api/config` → クライアント初期化用の公開設定（APIキーは返しません）
 - GET `/api/line-profile?user_id=...`（要 `x-api-key`）→ LINEのdisplayName参照
 

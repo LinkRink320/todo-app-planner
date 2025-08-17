@@ -23,6 +23,9 @@ function parse(text) {
 
   if (t === "ls") return { type: "list" };
   if (t === "lsl") return { type: "list_long" };
+  
+  // 自分のユーザーID確認
+  if (t === 'myid' || t === 'id' || t === 'whoami') return {type:'whoami'};
 
   // プロジェクト操作
   if (t.startsWith("padd ")) {

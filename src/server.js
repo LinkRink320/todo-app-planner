@@ -147,6 +147,11 @@ app.post("/line/webhook", middleware(config), async (req, res) => {
         const u = e.source.userId;
         const cmd = parse(e.message.text);
 
+        // 自分のLINE User IDを返す
+        if (cmd.type === 'whoami') {
+          return client.replyMessage(e.replyToken, { type:'text', text:`あなたのLINE User ID: ${u}\nこのIDを /app に入力すると、同じデータが閲覧できます。` });
+        }
+
         // グループ内での監視登録
         if (cmd.type === "watch_here") {
           if (e.source.type !== "group" || !e.source.groupId) {
@@ -348,7 +353,7 @@ app.post("/line/webhook", middleware(config), async (req, res) => {
 
         return client.replyMessage(e.replyToken, {
           type: "text",
-          text: "使い方: add YYYY-MM-DD HH:mm タイトル / ls / done {id} / watch here(グループで) / addl YYYY-MM-DD HH:mm タイトル / lsl / prog {id} {0-100%} / padd 名称 / pls / addp {pid} YYYY-MM-DD HH:mm タイトル / lsp {pid}",
+          text: "使い方: whoami(=myid/id) / add YYYY-MM-DD HH:mm タイトル / ls / done {id} / watch here(グループで) / addl YYYY-MM-DD HH:mm タイトル / lsl / prog {id} {0-100%} / padd 名称 / pls / addp {pid} YYYY-MM-DD HH:mm タイトル / lsp {pid}",
         });
       })
     );
