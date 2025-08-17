@@ -3,70 +3,142 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Todo Planner - PDCA</title>
+  <title>Todo Planner</title>
   <style>
-    body{font-family:system-ui, sans-serif; margin:24px;}
-    input,select,textarea{padding:8px; margin:4px 0; width:100%; max-width:520px;}
-    button{padding:8px 12px;}
-    .row{max-width:560px;}
-    .list{white-space:pre-wrap; background:#fafafa; padding:8px; border:1px solid #eee;}
+    :root{--bg:#f6f6f6;--panel:#fff;--border:#e6e6e6;--text:#222;--muted:#666;--accent:#db4c3f;}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Noto Sans JP, sans-serif;}
+    header{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--panel);position:sticky;top:0;z-index:2}
+    header input{border:1px solid var(--border);border-radius:8px;padding:8px 10px;}
+    .wrap{display:grid;grid-template-columns:280px 1fr;min-height:calc(100vh - 57px)}
+    aside{border-right:1px solid var(--border);background:var(--panel);padding:12px}
+    main{padding:16px}
+    .section-title{font-weight:600;margin:12px 0}
+    .list{list-style:none;padding:0;margin:0}
+    .item{display:flex;align-items:center;gap:8px;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--panel);margin-bottom:8px}
+    .item .title{flex:1}
+    .muted{color:var(--muted);font-size:12px}
+    button,select,input{font:inherit}
+    .btn{border:1px solid var(--border);background:#fff;border-radius:8px;padding:6px 10px;cursor:pointer}
+    .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+    .row{display:flex;gap:8px;align-items:center}
+    .pill{display:inline-block;border:1px solid var(--border);border-radius:999px;padding:2px 8px;font-size:12px}
+    .tasks-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+    .divider{height:1px;background:var(--border);margin:12px 0}
+    .input{border:1px solid var(--border);border-radius:8px;padding:8px 10px;width:100%}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    @media (max-width:900px){.wrap{grid-template-columns:1fr}aside{position:sticky;top:57px;z-index:1}}
   </style>
   <script>
-    async function submitLog(e){
-      e.preventDefault();
-      const api = document.getElementById('api').value.trim();
-      const line_user_id = document.getElementById('uid').value.trim();
-      const project_id = document.getElementById('pid').value.trim();
-      const task_id = document.getElementById('tid').value.trim();
-      const type = document.getElementById('type').value;
-      const note = document.getElementById('note').value;
-      const r = await fetch('/api/logs', {method:'POST', headers:{'Content-Type':'application/json','x-api-key':api}, body:JSON.stringify({line_user_id, project_id: project_id||null, task_id: task_id||null, type, note})});
-      const j = await r.json();
-      alert('saved: '+JSON.stringify(j));
-    }
+    const $ = (id) => document.getElementById(id);
+    const apiH = () => ({'x-api-key': $('#api').value.trim(), 'Content-Type':'application/json'});
+    let currentPid = null;
+
     async function loadProjects(){
-      const api = document.getElementById('api').value.trim();
-      const line_user_id = document.getElementById('uid').value.trim();
-      const r = await fetch('/api/projects?line_user_id='+encodeURIComponent(line_user_id), {headers:{'x-api-key':api}});
-      document.getElementById('projects').textContent = await r.text();
+      const uid = $('#uid').value.trim(); if(!uid) return alert('LINE User ID');
+      const r = await fetch('/api/projects?line_user_id='+encodeURIComponent(uid), {headers: apiH()});
+      const data = await r.json();
+      const ul = $('#projects');
+      ul.innerHTML = '';
+      data.forEach(p=>{
+        const li = document.createElement('li');
+        li.className='item';
+        li.innerHTML = `<div class="title">${p.name}</div><button class="btn" data-id="${p.id}">開く</button>`;
+        li.querySelector('button').onclick = ()=> selectProject(p.id, p.name);
+        ul.appendChild(li);
+      });
+    }
+    async function createProject(){
+      const uid = $('#uid').value.trim(); if(!uid) return alert('LINE User ID');
+      const name = $('#pname').value.trim(); if(!name) return;
+      const r = await fetch('/api/projects', {method:'POST', headers: apiH(), body: JSON.stringify({line_user_id: uid, name})});
+      if(!r.ok) return alert('failed');
+      $('#pname').value='';
+      loadProjects();
+    }
+    function selectProject(id, name){
+      currentPid = id;
+      $('#currentProject').textContent = `タスク - ${name}`;
+      $('#selectedPid').textContent = 'P'+id;
+      loadTasks();
     }
     async function loadTasks(){
-      const api = document.getElementById('api').value.trim();
-      const line_user_id = document.getElementById('uid').value.trim();
-      const pid = document.getElementById('pid').value.trim();
-      const url = '/api/tasks?line_user_id='+encodeURIComponent(line_user_id)+(pid?('&project_id='+encodeURIComponent(pid)):'');
-      const r = await fetch(url, {headers:{'x-api-key':api}});
-      document.getElementById('tasks').textContent = await r.text();
+      const uid = $('#uid').value.trim(); if(!uid) return alert('LINE User ID');
+      const url = '/api/tasks?line_user_id='+encodeURIComponent(uid)+(currentPid?('&project_id='+currentPid):'');
+      const r = await fetch(url, {headers: {'x-api-key': $('#api').value.trim()}});
+      const data = await r.json();
+      const ul = $('#tasks');
+      ul.innerHTML='';
+      data.forEach(t=>{
+        const li = document.createElement('li');
+        li.className='item';
+        li.innerHTML = `
+          <input type="checkbox" ${t.status==='done'?'checked':''} />
+          <div class="title">${t.title}<div class="muted">${t.deadline} ・ ${t.status}</div></div>
+          <button class="btn" data-id="${t.id}">完了</button>
+        `;
+        const cb = li.querySelector('input[type=checkbox]');
+        cb.onchange = ()=> updateTask(t.id, cb.checked? 'done':'pending');
+        li.querySelector('button').onclick = ()=> updateTask(t.id, 'done');
+        ul.appendChild(li);
+      });
     }
+    async function createTask(){
+      const uid = $('#uid').value.trim(); if(!uid) return alert('LINE User ID');
+      const title = $('#ttitle').value.trim(); if(!title) return;
+      const deadline = $('#tdeadline').value.trim(); if(!deadline) return;
+      const r = await fetch('/api/tasks', {method:'POST', headers: apiH(), body: JSON.stringify({line_user_id: uid, title, deadline, project_id: currentPid})});
+      if(!r.ok) return alert('failed');
+      $('#ttitle').value='';
+      loadTasks();
+    }
+    async function updateTask(id, status){
+      const r = await fetch('/api/tasks/'+id, {method:'PATCH', headers: apiH(), body: JSON.stringify({status})});
+      if(!r.ok) return alert('failed');
+      loadTasks();
+    }
+
+    // initial
+    setTimeout(loadProjects, 300);
   </script>
   </head>
 <body>
-  <h1>Todo Planner - PDCA</h1>
-  <div class="row">
-    <label>API Key <input id="api" placeholder="set .env API_KEY" /></label>
-    <label>LINE User ID <input id="uid" placeholder="Uxxxxxxxxx... (必須)" /></label>
-    <label>Project ID <input id="pid" placeholder="数値（任意）" /></label>
-    <label>Task ID <input id="tid" placeholder="数値（任意）" /></label>
-    <label>Type
-      <select id="type">
-        <option value="plan">PLAN</option>
-        <option value="do">DO</option>
-        <option value="check">CHECK</option>
-        <option value="act">ACT</option>
-      </select>
-    </label>
-    <label>Note<textarea id="note" rows="4" placeholder="メモ"></textarea></label>
-    <button onclick="submitLog(event)">PDCA ログ保存</button>
-  </div>
-
-  <h2>一覧</h2>
-  <div class="row">
-    <button onclick="loadProjects()">プロジェクト取得</button>
-    <div id="projects" class="list"></div>
-  </div>
-  <div class="row">
-    <button onclick="loadTasks()">タスク取得（任意で Project ID 指定）</button>
-    <div id="tasks" class="list"></div>
+  <header>
+    <strong>Todo Planner</strong>
+    <input id="api" placeholder="API_KEY" />
+    <input id="uid" placeholder="LINE User ID (必須)" style="min-width:260px" />
+    <span class="muted">プロジェクトを選択してタスクを管理</span>
+  </header>
+  <div class="wrap">
+    <aside>
+      <div class="section-title">プロジェクト</div>
+      <ul id="projects" class="list"></ul>
+      <div class="divider"></div>
+      <div class="grid2">
+        <input id="pname" class="input" placeholder="新規プロジェクト名" />
+        <button class="btn primary" onclick="createProject()">追加</button>
+      </div>
+    </aside>
+    <main>
+      <div class="tasks-header">
+        <div>
+          <div id="currentProject" class="section-title">タスク</div>
+          <div class="muted" id="hint">期限は YYYY-MM-DD HH:mm</div>
+        </div>
+        <div class="row">
+          <span id="selectedPid" class="pill">未選択</span>
+        </div>
+      </div>
+      <div class="grid2" style="margin-bottom:8px">
+        <input id="ttitle" class="input" placeholder="タスク名" />
+        <input id="tdeadline" class="input" placeholder="2025-09-01 09:00" />
+      </div>
+      <div class="row" style="margin-bottom:12px">
+        <button class="btn primary" onclick="createTask()">タスク追加</button>
+        <button class="btn" onclick="loadTasks()">更新</button>
+      </div>
+      <ul id="tasks" class="list"></ul>
+    </main>
   </div>
 </body>
 </html>

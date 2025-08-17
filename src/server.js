@@ -12,7 +12,8 @@ const config = {
 };
 const client = new Client(config);
 const app = express();
-app.use(express.json());
+// NOTE: Do not use global JSON parser before LINE middleware. Scope to /api only.
+app.use('/api', express.json());
 
 // ヘルスチェック
 app.get("/", (_, res) => res.send("ok"));
@@ -68,6 +69,15 @@ app.get('/api/projects', requireKey, (req, res) => {
   });
 });
 
+app.post('/api/projects', requireKey, (req, res) => {
+  const { line_user_id, name } = req.body||{};
+  if (!line_user_id || !name) return res.status(400).json({ error: 'line_user_id and name required' });
+  db.run("INSERT INTO projects(line_user_id,name) VALUES(?,?)", [line_user_id, name], function(err){
+    if (err) return res.status(500).json({ error: 'db', detail: String(err) });
+    res.json({ id: this?.lastID, name });
+  });
+});
+
 app.get('/api/tasks', requireKey, (req, res) => {
   const { line_user_id, project_id, status='pending' } = req.query;
   if (!line_user_id) return res.status(400).json({ error: 'line_user_id required' });
@@ -79,6 +89,25 @@ app.get('/api/tasks', requireKey, (req, res) => {
   db.all(`SELECT id,title,deadline,status,project_id FROM tasks ${where} ORDER BY deadline ASC`, args, (e, rows)=>{
     if (e) return res.status(500).json({ error: 'db', detail: String(e) });
     res.json(rows||[]);
+  });
+});
+
+app.post('/api/tasks', requireKey, (req, res) => {
+  const { line_user_id, title, deadline, project_id } = req.body||{};
+  if (!line_user_id || !title || !deadline) return res.status(400).json({ error: 'line_user_id, title, deadline required' });
+  db.run("INSERT INTO tasks(line_user_id,title,deadline,project_id) VALUES (?,?,?,?)", [line_user_id, title, deadline, project_id||null], function(err){
+    if (err) return res.status(500).json({ error: 'db', detail: String(err) });
+    res.json({ id: this?.lastID });
+  });
+});
+
+app.patch('/api/tasks/:id', requireKey, (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body||{};
+  if (!['pending','done','failed'].includes(String(status))) return res.status(400).json({ error: 'invalid status' });
+  db.run("UPDATE tasks SET status=? WHERE id=?", [status, id], function(err){
+    if (err) return res.status(500).json({ error: 'db', detail: String(err) });
+    res.json({ updated: this?.changes||0 });
   });
 });
 
