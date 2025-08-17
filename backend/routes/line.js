@@ -9,6 +9,9 @@ const client = new Client(line);
 
 router.post("/webhook", middleware(line), async (req, res) => {
   const events = req.body.events || [];
+  // Respond immediately to avoid LINE retries/timeouts; handle events async
+  res.sendStatus(200);
+  if (!events.length) return;
   try {
     await Promise.all(
       events.map(async (e) => {
@@ -218,14 +221,12 @@ router.post("/webhook", middleware(line), async (req, res) => {
         });
       })
     );
-    res.sendStatus(200);
   } catch (err) {
     console.error(
       "[REPLY ERROR]",
       err?.statusCode,
       err?.originalError?.response?.data || err
     );
-    res.sendStatus(200);
   }
 });
 

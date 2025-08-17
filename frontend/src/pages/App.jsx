@@ -118,7 +118,7 @@ export default function App() {
     } else if (pid) {
       qs.set("project_id", String(pid));
     }
-  if (status) qs.set("status", status);
+    if (status) qs.set("status", status);
     const r = await fetch(`/api/tasks?${qs.toString()}`, {
       headers: await h(),
     });
@@ -333,7 +333,9 @@ export default function App() {
                 <ul>
                   <li>ステータスを「すべて」にする</li>
                   <li>「未分類」/「すべて」フィルタを切り替える</li>
-                  <li>ログインのLINE User ID が正しいか（右上のログインで再設定）</li>
+                  <li>
+                    ログインのLINE User ID が正しいか（右上のログインで再設定）
+                  </li>
                 </ul>
                 <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                   <button onClick={() => setStatus("all")}>すべて表示</button>
