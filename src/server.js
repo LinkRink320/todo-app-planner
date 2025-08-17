@@ -34,6 +34,15 @@ const requireKey = (req, res, next) => {
   next();
 };
 
+// Public config (no secrets leaked)
+app.get('/api/config', (req, res) => {
+  res.json({
+    apiKeySet: Boolean(process.env.API_KEY),
+    defaultLineUserId: process.env.DEFAULT_LINE_USER_ID || null,
+    defaultLineUserName: process.env.DEFAULT_LINE_USER_NAME || null,
+  });
+});
+
 // PDCA logs
 app.post('/api/logs', requireKey, (req, res) => {
   const { line_user_id, project_id, task_id, type, note } = req.body||{};
@@ -103,6 +112,18 @@ app.post('/api/tasks', requireKey, (req, res) => {
     if (err) return res.status(500).json({ error: 'db', detail: String(err) });
     res.json({ id: this?.lastID });
   });
+});
+
+// LINE profile lookup (useful to show display name in UI)
+app.get('/api/line-profile', requireKey, async (req, res) => {
+  try {
+    const userId = String(req.query.user_id||'');
+    if (!userId) return res.status(400).json({ error: 'user_id required' });
+    const p = await client.getProfile(userId);
+    res.json(p);
+  } catch (e) {
+    res.status(500).json({ error: 'line', detail: e?.response?.data || String(e) });
+  }
 });
 
 app.patch('/api/tasks/:id', requireKey, (req, res) => {

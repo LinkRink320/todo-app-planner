@@ -2,16 +2,30 @@ const $ = (id) => document.getElementById(id);
 const apiH = () => ({'x-api-key': $('#api').value.trim(), 'Content-Type':'application/json'});
 let currentPid = null;
 
+async function bootstrap(){
+  try{
+    const c = await (await fetch('/api/config')).json();
+    if (c.defaultLineUserId && !$('#uid').value) $('#uid').value = c.defaultLineUserId;
+    if (c.defaultLineUserId){
+      try{
+        const prof = await (await fetch('/api/line-profile?user_id='+encodeURIComponent(c.defaultLineUserId), {headers: {'x-api-key': $('#api').value.trim()}})).json();
+        if (prof?.displayName) document.querySelector('header .muted').textContent = `ようこそ、${prof.displayName} さん`;
+      }catch{}
+    }
+  }catch{}
+  setTimeout(loadProjects, 300);
+}
+
 async function loadProjects(){
-  const uid = $('#uid').value.trim(); if(!uid) return alert('LINE User ID');
+  const uid = $('#uid').value.trim(); if(!uid) return; // 初期ロード時は黙ってスキップ
   const r = await fetch('/api/projects?line_user_id='+encodeURIComponent(uid), {headers: apiH()});
-  if(!r.ok){ alert('projects failed'); return; }
+  if(!r.ok){ return; }
   const data = await r.json();
   const ul = $('#projects'); ul.innerHTML='';
   data.forEach(p=>{
     const li = document.createElement('li');
     li.className='item';
-    li.innerHTML = `<div class="title">${p.name}</div><button class="btn" data-id="${p.id}">開く</button>`;
+    li.innerHTML = `<div class=\"title\">${p.name}</div><button class=\"btn\" data-id=\"${p.id}\">開く</button>`;
     li.querySelector('button').onclick = ()=> selectProject(p.id, p.name);
     ul.appendChild(li);
   });
@@ -67,4 +81,4 @@ async function updateTask(id, status){
 }
 
 // initial
-setTimeout(loadProjects, 300);
+window.addEventListener('DOMContentLoaded', bootstrap);
