@@ -53,6 +53,8 @@ db.serialize(() => {
       alters.push("ALTER TABLE tasks ADD COLUMN repeat TEXT");
     if (!names.has("estimated_minutes"))
       alters.push("ALTER TABLE tasks ADD COLUMN estimated_minutes INTEGER");
+    if (!names.has("soft_deadline"))
+      alters.push("ALTER TABLE tasks ADD COLUMN soft_deadline TEXT");
 
     // If deadline column is NOT NULL, migrate to allow NULL (optional deadline)
     const deadlineCol = (cols || []).find((c) => c.name === "deadline");
@@ -109,6 +111,9 @@ db.serialize(() => {
       db.run(
         "CREATE INDEX IF NOT EXISTS idx_tasks_user_status_sort ON tasks(line_user_id, status, sort_order)"
       );
+      db.run(
+        "CREATE INDEX IF NOT EXISTS idx_tasks_user_soft_deadline ON tasks(line_user_id, soft_deadline)"
+      );
     });
   });
 
@@ -151,8 +156,12 @@ db.serialize(() => {
     }
   });
   db.run("CREATE INDEX IF NOT EXISTS idx_todos_task ON todos(task_id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_todos_task_done ON todos(task_id, done)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_todos_task_sort ON todos(task_id, sort_order)");
+  db.run(
+    "CREATE INDEX IF NOT EXISTS idx_todos_task_done ON todos(task_id, done)"
+  );
+  db.run(
+    "CREATE INDEX IF NOT EXISTS idx_todos_task_sort ON todos(task_id, sort_order)"
+  );
 
   // Saved composite views (filters/layout presets)
   db.run(`CREATE TABLE IF NOT EXISTS saved_views(
@@ -195,6 +204,36 @@ db.serialize(() => {
     note TEXT,
     created_at TEXT DEFAULT (datetime('now','localtime'))
   )`);
+
+  // Daily Plans and Items
+  db.run(`CREATE TABLE IF NOT EXISTS plans(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    line_user_id TEXT NOT NULL,
+    date TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    updated_at TEXT
+  )`);
+  db.run(
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_plans_user_date ON plans(line_user_id, date)"
+  );
+
+  db.run(`CREATE TABLE IF NOT EXISTS plan_items(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    plan_id INTEGER NOT NULL,
+    task_id INTEGER NOT NULL,
+    order_index INTEGER,
+    planned_minutes INTEGER,
+    block TEXT, -- 'morning' | 'afternoon' | 'evening'
+    rocket INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    updated_at TEXT
+  )`);
+  db.run(
+    "CREATE INDEX IF NOT EXISTS idx_plan_items_plan_order ON plan_items(plan_id, order_index)"
+  );
+  db.run(
+    "CREATE INDEX IF NOT EXISTS idx_plan_items_plan_block ON plan_items(plan_id, block)"
+  );
 });
 
 module.exports = db;

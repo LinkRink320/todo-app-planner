@@ -13,7 +13,10 @@ function ensureViewOrderColumn(cb) {
       if (err) return cb && cb();
       const names = new Set((cols || []).map((c) => c.name));
       if (names.has("view_order")) return cb && cb();
-      db.run("ALTER TABLE saved_views ADD COLUMN view_order INTEGER", () => cb && cb());
+      db.run(
+        "ALTER TABLE saved_views ADD COLUMN view_order INTEGER",
+        () => cb && cb()
+      );
     });
   } catch {
     cb && cb();
@@ -117,7 +120,7 @@ router.get("/tasks", (req, res) => {
     importance,
     deadline_from,
     deadline_to,
-  with_todo_counts,
+    with_todo_counts,
   } = req.query;
   if (!line_user_id)
     return res.status(400).json({ error: "line_user_id required" });
@@ -154,7 +157,7 @@ router.get("/tasks", (req, res) => {
   const where = "WHERE " + conds.join(" AND ");
   const lim = Math.min(Math.max(parseInt(limit || 200, 10) || 200, 1), 1000);
   db.all(
-    `SELECT id,title,deadline,status,project_id,type,progress,importance,sort_order,repeat,estimated_minutes FROM tasks ${where} ORDER BY CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END, sort_order ASC, CASE WHEN deadline IS NULL THEN 1 ELSE 0 END, deadline ASC LIMIT ?`,
+    `SELECT id,title,deadline,soft_deadline,status,project_id,type,progress,importance,sort_order,repeat,estimated_minutes FROM tasks ${where} ORDER BY CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END, sort_order ASC, CASE WHEN deadline IS NULL THEN 1 ELSE 0 END, deadline ASC LIMIT ?`,
     [...args, lim],
     (e, rows) => {
       if (e) return res.status(500).json({ error: "db", detail: String(e) });
@@ -175,7 +178,8 @@ router.get("/tasks", (req, res) => {
         }
         return { ...r, urgency };
       });
-      const needsCounts = String(with_todo_counts || "").toLowerCase() === "true";
+      const needsCounts =
+        String(with_todo_counts || "").toLowerCase() === "true";
       if (!needsCounts || list.length === 0) return res.json(list);
       const ids = list.map((x) => x.id);
       const ph = ids.map(() => "?").join(",");
@@ -199,8 +203,16 @@ router.get("/tasks", (req, res) => {
 });
 
 router.post("/tasks", (req, res) => {
-  const { line_user_id, title, deadline, project_id, importance, repeat, estimated_minutes } =
-    req.body || {};
+  const {
+    line_user_id,
+    title,
+    deadline,
+    project_id,
+    importance,
+    repeat,
+  estimated_minutes,
+  soft_deadline,
+  } = req.body || {};
   if (!line_user_id || !title)
     return res.status(400).json({ error: "line_user_id and title required" });
   let imp = null;
@@ -210,10 +222,21 @@ router.post("/tasks", (req, res) => {
     else return res.status(400).json({ error: "invalid importance" });
   }
   const rep = repeat ? String(repeat) : null;
-  const est = Number.isFinite(Number(estimated_minutes)) ? Number(estimated_minutes) : null;
+  const est = Number.isFinite(Number(estimated_minutes))
+    ? Number(estimated_minutes)
+    : null;
   db.run(
-    "INSERT INTO tasks(line_user_id,title,deadline,project_id,importance,repeat,estimated_minutes) VALUES (?,?,?,?,?,?,?)",
-    [line_user_id, title, deadline || null, project_id || null, imp, rep, est],
+    "INSERT INTO tasks(line_user_id,title,deadline,soft_deadline,project_id,importance,repeat,estimated_minutes) VALUES (?,?,?,?,?,?,?,?)",
+    [
+      line_user_id,
+      title,
+      deadline || null,
+      soft_deadline || null,
+      project_id || null,
+      imp,
+      rep,
+      est,
+    ],
     function (err) {
       if (err)
         return res.status(500).json({ error: "db", detail: String(err) });
@@ -224,7 +247,17 @@ router.post("/tasks", (req, res) => {
 
 router.patch("/tasks/:id", (req, res) => {
   const { id } = req.params;
-  const { title, deadline, project_id, importance, status, repeat, sort_order, estimated_minutes } = req.body || {};
+  const {
+    title,
+    deadline,
+  soft_deadline,
+    project_id,
+    importance,
+    status,
+    repeat,
+    sort_order,
+    estimated_minutes,
+  } = req.body || {};
 
   const sets = [];
   const args = [];
@@ -249,6 +282,11 @@ router.patch("/tasks/:id", (req, res) => {
     sets.push("project_id=?");
     args.push(p);
   }
+  if (typeof soft_deadline !== "undefined") {
+    const sd = soft_deadline ? String(soft_deadline) : null;
+    sets.push("soft_deadline=?");
+    args.push(sd);
+  }
   if (typeof importance !== "undefined") {
     let imp = null;
     if (importance) {
@@ -271,7 +309,9 @@ router.patch("/tasks/:id", (req, res) => {
     args.push(so);
   }
   if (typeof estimated_minutes !== "undefined") {
-    const est = Number.isFinite(Number(estimated_minutes)) ? Number(estimated_minutes) : null;
+    const est = Number.isFinite(Number(estimated_minutes))
+      ? Number(estimated_minutes)
+      : null;
     sets.push("estimated_minutes=?");
     args.push(est);
   }
@@ -296,7 +336,7 @@ router.patch("/tasks/:id", (req, res) => {
     // If marked done and task has repeat and deadline, create next occurrence
     if (updated && typeof status !== "undefined" && String(status) === "done") {
       db.get(
-        "SELECT line_user_id,title,deadline,project_id,importance,repeat,estimated_minutes FROM tasks WHERE id=?",
+        "SELECT line_user_id,title,deadline,soft_deadline,project_id,importance,repeat,estimated_minutes FROM tasks WHERE id=?",
         [id],
         (gErr, row) => {
           if (gErr || !row) return res.json({ updated });
@@ -305,11 +345,12 @@ router.patch("/tasks/:id", (req, res) => {
           const next = calcNextDeadline(row.deadline, rep);
           if (!next) return res.json({ updated });
           db.run(
-            "INSERT INTO tasks(line_user_id,title,deadline,project_id,importance,repeat,estimated_minutes) VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO tasks(line_user_id,title,deadline,soft_deadline,project_id,importance,repeat,estimated_minutes) VALUES (?,?,?,?,?,?,?,?)",
             [
               row.line_user_id,
               row.title,
               next,
+              row.soft_deadline || null,
               row.project_id || null,
               row.importance || null,
               rep,
@@ -362,16 +403,25 @@ function calcNextDeadline(deadline, rep) {
 router.post("/tasks/reorder", (req, res) => {
   const { line_user_id, status, orderedIds } = req.body || {};
   if (!line_user_id || !status || !Array.isArray(orderedIds))
-    return res.status(400).json({ error: "line_user_id, status, orderedIds required" });
+    return res
+      .status(400)
+      .json({ error: "line_user_id, status, orderedIds required" });
   if (!["pending", "done", "failed"].includes(String(status)))
     return res.status(400).json({ error: "invalid status" });
-  const updates = orderedIds.map((id, idx) => ({ id: Number(id), so: idx + 1 }));
-  const stmt = db.prepare("UPDATE tasks SET sort_order=? WHERE id=? AND line_user_id=? AND status=?");
+  const updates = orderedIds.map((id, idx) => ({
+    id: Number(id),
+    so: idx + 1,
+  }));
+  const stmt = db.prepare(
+    "UPDATE tasks SET sort_order=? WHERE id=? AND line_user_id=? AND status=?"
+  );
   db.run("BEGIN");
   for (const u of updates) stmt.run([u.so, u.id, line_user_id, status]);
   stmt.finalize((e) => {
     if (e) {
-      try { db.run("ROLLBACK"); } catch {}
+      try {
+        db.run("ROLLBACK");
+      } catch {}
       return res.status(500).json({ error: "db", detail: String(e) });
     }
     db.run("COMMIT", (e2) => {
@@ -397,14 +447,17 @@ router.get("/line-profile", async (req, res) => {
 // Saved Views CRUD
 router.get("/views", (req, res) => {
   const { line_user_id } = req.query;
-  if (!line_user_id) return res.status(400).json({ error: "line_user_id required" });
+  if (!line_user_id)
+    return res.status(400).json({ error: "line_user_id required" });
   ensureViewOrderColumn(() => {
     db.all(
       "SELECT id,name,payload,view_order,created_at,updated_at FROM saved_views WHERE line_user_id=? ORDER BY COALESCE(view_order, 1e9), id DESC",
       [line_user_id],
       (e, rows) => {
         if (e) return res.status(500).json({ error: "db", detail: String(e) });
-        res.json((rows || []).map((r) => ({ ...r, payload: safeParse(r.payload) })));
+        res.json(
+          (rows || []).map((r) => ({ ...r, payload: safeParse(r.payload) }))
+        );
       }
     );
   });
@@ -412,13 +465,15 @@ router.get("/views", (req, res) => {
 
 router.post("/views", (req, res) => {
   const { line_user_id, name, payload } = req.body || {};
-  if (!line_user_id || !name) return res.status(400).json({ error: "line_user_id and name required" });
+  if (!line_user_id || !name)
+    return res.status(400).json({ error: "line_user_id and name required" });
   const json = JSON.stringify(payload || {});
   db.run(
     "INSERT INTO saved_views(line_user_id,name,payload) VALUES (?,?,?)",
     [line_user_id, name, json],
     function (err) {
-      if (err) return res.status(500).json({ error: "db", detail: String(err) });
+      if (err)
+        return res.status(500).json({ error: "db", detail: String(err) });
       res.json({ id: this?.lastID });
     }
   );
@@ -430,7 +485,8 @@ router.patch("/views/:id", (req, res) => {
   const sets = [];
   const args = [];
   if (typeof name !== "undefined") {
-    if (!String(name).trim()) return res.status(400).json({ error: "name cannot be empty" });
+    if (!String(name).trim())
+      return res.status(400).json({ error: "name cannot be empty" });
     sets.push("name=?");
     args.push(String(name));
   }
@@ -438,8 +494,11 @@ router.patch("/views/:id", (req, res) => {
     sets.push("payload=?");
     args.push(JSON.stringify(payload || {}));
   }
-  if (!sets.length) return res.status(400).json({ error: "no fields to update" });
-  const sql = `UPDATE saved_views SET ${sets.join(", ")}, updated_at=datetime('now','localtime') WHERE id=?`;
+  if (!sets.length)
+    return res.status(400).json({ error: "no fields to update" });
+  const sql = `UPDATE saved_views SET ${sets.join(
+    ", "
+  )}, updated_at=datetime('now','localtime') WHERE id=?`;
   db.run(sql, [...args, id], function (err) {
     if (err) return res.status(500).json({ error: "db", detail: String(err) });
     res.json({ updated: this?.changes || 0 });
@@ -456,18 +515,26 @@ router.delete("/views/:id", (req, res) => {
 
 router.post("/views/reorder", (req, res) => {
   const { line_user_id, orderedIds } = req.body || {};
-  if (!line_user_id || !Array.isArray(orderedIds)) return res.status(400).json({ error: "line_user_id and orderedIds required" });
+  if (!line_user_id || !Array.isArray(orderedIds))
+    return res
+      .status(400)
+      .json({ error: "line_user_id and orderedIds required" });
   ensureViewOrderColumn(() => {
-    const stmt = db.prepare("UPDATE saved_views SET view_order=? WHERE id=? AND line_user_id=?");
+    const stmt = db.prepare(
+      "UPDATE saved_views SET view_order=? WHERE id=? AND line_user_id=?"
+    );
     db.run("BEGIN");
     orderedIds.forEach((id, idx) => stmt.run([idx + 1, id, line_user_id]));
     stmt.finalize((e) => {
       if (e) {
-        try { db.run("ROLLBACK"); } catch {}
+        try {
+          db.run("ROLLBACK");
+        } catch {}
         return res.status(500).json({ error: "db", detail: String(e) });
       }
       db.run("COMMIT", (e2) => {
-        if (e2) return res.status(500).json({ error: "db", detail: String(e2) });
+        if (e2)
+          return res.status(500).json({ error: "db", detail: String(e2) });
         res.json({ updated: orderedIds.length });
       });
     });
@@ -475,7 +542,11 @@ router.post("/views/reorder", (req, res) => {
 });
 
 function safeParse(s) {
-  try { return JSON.parse(s); } catch { return {}; }
+  try {
+    return JSON.parse(s);
+  } catch {
+    return {};
+  }
 }
 
 module.exports = router;
@@ -484,12 +555,20 @@ module.exports = router;
 // Create todo
 router.post("/todos", (req, res) => {
   const { task_id, title, estimated_minutes } = req.body || {};
-  if (!task_id || !title) return res.status(400).json({ error: "task_id and title required" });
+  if (!task_id || !title)
+    return res.status(400).json({ error: "task_id and title required" });
   db.run(
     "INSERT INTO todos(task_id,title,estimated_minutes) VALUES(?,?,?)",
-    [Number(task_id), String(title), Number.isFinite(Number(estimated_minutes)) ? Number(estimated_minutes) : null],
+    [
+      Number(task_id),
+      String(title),
+      Number.isFinite(Number(estimated_minutes))
+        ? Number(estimated_minutes)
+        : null,
+    ],
     function (err) {
-      if (err) return res.status(500).json({ error: "db", detail: String(err) });
+      if (err)
+        return res.status(500).json({ error: "db", detail: String(err) });
       res.json({ id: this?.lastID });
     }
   );
@@ -500,7 +579,7 @@ router.get("/todos", (req, res) => {
   const { task_id } = req.query || {};
   if (!task_id) return res.status(400).json({ error: "task_id required" });
   db.all(
-  "SELECT id,task_id,title,done,estimated_minutes,sort_order,created_at,updated_at FROM todos WHERE task_id=? ORDER BY CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END, sort_order, id",
+    "SELECT id,task_id,title,done,estimated_minutes,sort_order,created_at,updated_at FROM todos WHERE task_id=? ORDER BY CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END, sort_order, id",
     [Number(task_id)],
     (e, rows) => {
       if (e) return res.status(500).json({ error: "db", detail: String(e) });
@@ -516,7 +595,8 @@ router.patch("/todos/:id", (req, res) => {
   const sets = [];
   const args = [];
   if (typeof title !== "undefined") {
-    if (!String(title).trim()) return res.status(400).json({ error: "title cannot be empty" });
+    if (!String(title).trim())
+      return res.status(400).json({ error: "title cannot be empty" });
     sets.push("title=?");
     args.push(String(title));
   }
@@ -530,12 +610,17 @@ router.patch("/todos/:id", (req, res) => {
     args.push(so);
   }
   if (typeof estimated_minutes !== "undefined") {
-    const est = Number.isFinite(Number(estimated_minutes)) ? Number(estimated_minutes) : null;
+    const est = Number.isFinite(Number(estimated_minutes))
+      ? Number(estimated_minutes)
+      : null;
     sets.push("estimated_minutes=?");
     args.push(est);
   }
-  if (!sets.length) return res.status(400).json({ error: "no fields to update" });
-  const sql = `UPDATE todos SET ${sets.join(", ")}, updated_at=datetime('now','localtime') WHERE id=?`;
+  if (!sets.length)
+    return res.status(400).json({ error: "no fields to update" });
+  const sql = `UPDATE todos SET ${sets.join(
+    ", "
+  )}, updated_at=datetime('now','localtime') WHERE id=?`;
   db.run(sql, [...args, id], function (err) {
     if (err) return res.status(500).json({ error: "db", detail: String(err) });
     res.json({ updated: this?.changes || 0 });
@@ -554,19 +639,155 @@ router.delete("/todos/:id", (req, res) => {
 // Reorder todos within a task
 router.post("/todos/reorder", (req, res) => {
   const { task_id, orderedIds } = req.body || {};
-  if (!task_id || !Array.isArray(orderedIds)) return res.status(400).json({ error: "task_id and orderedIds required" });
-  const updates = orderedIds.map((id, idx) => ({ id: Number(id), so: idx + 1 }));
-  const stmt = db.prepare("UPDATE todos SET sort_order=? WHERE id=? AND task_id=?");
+  if (!task_id || !Array.isArray(orderedIds))
+    return res.status(400).json({ error: "task_id and orderedIds required" });
+  const updates = orderedIds.map((id, idx) => ({
+    id: Number(id),
+    so: idx + 1,
+  }));
+  const stmt = db.prepare(
+    "UPDATE todos SET sort_order=? WHERE id=? AND task_id=?"
+  );
   db.run("BEGIN");
   for (const u of updates) stmt.run([u.so, u.id, Number(task_id)]);
   stmt.finalize((e) => {
     if (e) {
-      try { db.run("ROLLBACK"); } catch {}
+      try {
+        db.run("ROLLBACK");
+      } catch {}
       return res.status(500).json({ error: "db", detail: String(e) });
     }
     db.run("COMMIT", (e2) => {
       if (e2) return res.status(500).json({ error: "db", detail: String(e2) });
       res.json({ updated: updates.length });
     });
+  });
+});
+
+// --- Plans API ---
+// Get or create plan for a date
+router.get("/plans", (req, res) => {
+  const { line_user_id, date } = req.query || {};
+  if (!line_user_id || !date)
+    return res.status(400).json({ error: "line_user_id and date required" });
+  db.get(
+    "SELECT id,line_user_id,date,created_at,updated_at FROM plans WHERE line_user_id=? AND date=?",
+    [line_user_id, date],
+    (e, row) => {
+      if (e) return res.status(500).json({ error: "db", detail: String(e) });
+      if (!row) return res.json(null);
+      db.all(
+        "SELECT id,task_id,order_index,planned_minutes,block,rocket FROM plan_items WHERE plan_id=? ORDER BY COALESCE(order_index, 1e9), id",
+        [row.id],
+        (e2, items) => {
+          if (e2)
+            return res.status(500).json({ error: "db", detail: String(e2) });
+          res.json({ ...row, items: items || [] });
+        }
+      );
+    }
+  );
+});
+
+// Create or upsert plan shell
+router.post("/plans", (req, res) => {
+  const { line_user_id, date } = req.body || {};
+  if (!line_user_id || !date)
+    return res.status(400).json({ error: "line_user_id and date required" });
+  db.run(
+    "INSERT OR IGNORE INTO plans(line_user_id,date) VALUES(?,?)",
+    [line_user_id, date],
+    function (err) {
+      if (err)
+        return res.status(500).json({ error: "db", detail: String(err) });
+      db.get(
+        "SELECT id FROM plans WHERE line_user_id=? AND date=?",
+        [line_user_id, date],
+        (e2, r) => {
+          if (e2 || !r)
+            return res.status(500).json({ error: "db", detail: String(e2) });
+          res.json({ id: r.id });
+        }
+      );
+    }
+  );
+});
+
+// Add item to plan
+router.post("/plans/:id/items", (req, res) => {
+  const { id } = req.params;
+  const { task_id, planned_minutes, block, rocket } = req.body || {};
+  if (!task_id) return res.status(400).json({ error: "task_id required" });
+  db.run(
+    "INSERT INTO plan_items(plan_id,task_id,planned_minutes,block,rocket) VALUES (?,?,?,?,?)",
+    [
+      Number(id),
+      Number(task_id),
+      Number.isFinite(Number(planned_minutes)) ? Number(planned_minutes) : null,
+      block || null,
+      rocket ? 1 : 0,
+    ],
+    function (err) {
+      if (err)
+        return res.status(500).json({ error: "db", detail: String(err) });
+      res.json({ id: this?.lastID });
+    }
+  );
+});
+
+// Reorder items within a plan
+router.post("/plans/:id/items/reorder", (req, res) => {
+  const { id } = req.params;
+  const { orderedIds } = req.body || {};
+  if (!Array.isArray(orderedIds))
+    return res.status(400).json({ error: "orderedIds required" });
+  const stmt = db.prepare(
+    "UPDATE plan_items SET order_index=? WHERE id=? AND plan_id=?"
+  );
+  db.run("BEGIN");
+  orderedIds.forEach((pid, idx) => stmt.run([idx + 1, Number(pid), Number(id)]));
+  stmt.finalize((e) => {
+    if (e) {
+      try {
+        db.run("ROLLBACK");
+      } catch {}
+      return res.status(500).json({ error: "db", detail: String(e) });
+    }
+    db.run("COMMIT", (e2) => {
+      if (e2) return res.status(500).json({ error: "db", detail: String(e2) });
+      res.json({ updated: orderedIds.length });
+    });
+  });
+});
+
+// Update plan item
+router.patch("/plans/:id/items/:itemId", (req, res) => {
+  const { id, itemId } = req.params;
+  const { planned_minutes, block, rocket } = req.body || {};
+  const sets = [];
+  const args = [];
+  if (typeof planned_minutes !== "undefined") {
+    const pm = Number.isFinite(Number(planned_minutes))
+      ? Number(planned_minutes)
+      : null;
+    sets.push("planned_minutes=?");
+    args.push(pm);
+  }
+  if (typeof block !== "undefined") {
+    sets.push("block=?");
+    args.push(block || null);
+  }
+  if (typeof rocket !== "undefined") {
+    sets.push("rocket=?");
+    args.push(rocket ? 1 : 0);
+  }
+  if (!sets.length)
+    return res.status(400).json({ error: "no fields to update" });
+  const sql = `UPDATE plan_items SET ${sets.join(
+    ", "
+  )}, updated_at=datetime('now','localtime') WHERE id=? AND plan_id=?`;
+  db.run(sql, [...args, Number(itemId), Number(id)], function (err) {
+    if (err) return res.status(500).json({ error: "db", detail: String(err) });
+    res.json({ updated: this?.changes || 0 });
   });
 });
