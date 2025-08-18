@@ -146,15 +146,22 @@ router.post("/webhook", middleware(line), async (req, res) => {
                     .map((r) => {
                       const urgency = (() => {
                         if (!r.deadline) return "低";
-                        const t = Date.parse(String(r.deadline).replace(" ", "T"));
+                        const t = Date.parse(
+                          String(r.deadline).replace(" ", "T")
+                        );
                         if (Number.isNaN(t)) return "低";
-                        const diffDays = (t - Date.now()) / (24 * 60 * 60 * 1000);
+                        const diffDays =
+                          (t - Date.now()) / (24 * 60 * 60 * 1000);
                         if (diffDays <= 3) return "高";
                         if (diffDays <= 7) return "中";
                         return "低";
                       })();
-                      const imp = r.importance ? `・重要度:${r.importance}` : "";
-                      return `${r.id}: [${r.deadline || "-"}] ${r.title} ・緊急度:${urgency}${imp}`;
+                      const imp = r.importance
+                        ? `・重要度:${r.importance}`
+                        : "";
+                      return `${r.id}: [${r.deadline || "-"}] ${
+                        r.title
+                      } ・緊急度:${urgency}${imp}`;
                     })
                     .join("\n")
                 : "未達タスクなし";
@@ -187,15 +194,22 @@ router.post("/webhook", middleware(line), async (req, res) => {
                     .map((r) => {
                       const urgency = (() => {
                         if (!r.deadline) return "低";
-                        const t = Date.parse(String(r.deadline).replace(" ", "T"));
+                        const t = Date.parse(
+                          String(r.deadline).replace(" ", "T")
+                        );
                         if (Number.isNaN(t)) return "低";
-                        const diffDays = (t - Date.now()) / (24 * 60 * 60 * 1000);
+                        const diffDays =
+                          (t - Date.now()) / (24 * 60 * 60 * 1000);
                         if (diffDays <= 3) return "高";
                         if (diffDays <= 7) return "中";
                         return "低";
                       })();
-                      const imp = r.importance ? `・重要度:${r.importance}` : "";
-                      return `${r.id}: [${r.deadline || "-"}] ${r.title} ・緊急度:${urgency}${imp}`;
+                      const imp = r.importance
+                        ? `・重要度:${r.importance}`
+                        : "";
+                      return `${r.id}: [${r.deadline || "-"}] ${
+                        r.title
+                      } ・緊急度:${urgency}${imp}`;
                     })
                     .join("\n")
                 : "未達タスクなし";

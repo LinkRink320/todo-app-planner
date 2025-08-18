@@ -141,12 +141,19 @@ router.get("/tasks", (req, res) => {
 });
 
 router.post("/tasks", (req, res) => {
-  const { line_user_id, title, deadline, project_id, importance } = req.body || {};
+  const { line_user_id, title, deadline, project_id, importance } =
+    req.body || {};
   if (!line_user_id || !title)
     return res.status(400).json({ error: "line_user_id and title required" });
+  let imp = null;
+  if (importance) {
+    const v = String(importance).toLowerCase();
+    if (["high", "medium", "low"].includes(v)) imp = v;
+    else return res.status(400).json({ error: "invalid importance" });
+  }
   db.run(
     "INSERT INTO tasks(line_user_id,title,deadline,project_id,importance) VALUES (?,?,?,?,?)",
-    [line_user_id, title, deadline || null, project_id || null, importance || null],
+    [line_user_id, title, deadline || null, project_id || null, imp],
     function (err) {
       if (err)
         return res.status(500).json({ error: "db", detail: String(err) });
@@ -157,10 +164,52 @@ router.post("/tasks", (req, res) => {
 
 router.patch("/tasks/:id", (req, res) => {
   const { id } = req.params;
-  const { status } = req.body || {};
-  if (!["pending", "done", "failed"].includes(String(status)))
-    return res.status(400).json({ error: "invalid status" });
-  db.run("UPDATE tasks SET status=? WHERE id=?", [status, id], function (err) {
+  const { title, deadline, project_id, importance, status } = req.body || {};
+
+  const sets = [];
+  const args = [];
+
+  if (typeof title !== "undefined") {
+    if (!String(title).trim())
+      return res.status(400).json({ error: "title cannot be empty" });
+    sets.push("title=?");
+    args.push(String(title));
+  }
+  if (typeof deadline !== "undefined") {
+    // allow null/empty to clear deadline
+    const d = deadline ? String(deadline) : null;
+    sets.push("deadline=?");
+    args.push(d);
+  }
+  if (typeof project_id !== "undefined") {
+    const p = project_id === null || project_id === "none" ? null : Number(project_id) || null;
+    sets.push("project_id=?");
+    args.push(p);
+  }
+  if (typeof importance !== "undefined") {
+    let imp = null;
+    if (importance) {
+      const v = String(importance).toLowerCase();
+      if (!["high", "medium", "low"].includes(v))
+        return res.status(400).json({ error: "invalid importance" });
+      imp = v;
+    }
+    sets.push("importance=?");
+    args.push(imp);
+  }
+  if (typeof status !== "undefined") {
+    const s = String(status);
+    if (!["pending", "done", "failed"].includes(s))
+      return res.status(400).json({ error: "invalid status" });
+    sets.push("status=?");
+    args.push(s);
+  }
+
+  if (!sets.length) return res.status(400).json({ error: "no fields to update" });
+
+  // always bump updated_at
+  const sql = `UPDATE tasks SET ${sets.join(", ")}, updated_at=datetime('now','localtime') WHERE id=?`;
+  db.run(sql, [...args, id], function (err) {
     if (err) return res.status(500).json({ error: "db", detail: String(err) });
     res.json({ updated: this?.changes || 0 });
   });
