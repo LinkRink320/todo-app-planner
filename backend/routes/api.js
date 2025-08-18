@@ -356,7 +356,61 @@ router.patch("/tasks/:id", (req, res) => {
               rep,
               row.estimated_minutes || null,
             ],
-            () => res.json({ updated, repeated: true })
+            function (insErr) {
+              if (insErr) return res.json({ updated, repeated: false });
+              const newTaskId = this?.lastID;
+              if (!newTaskId)
+                return res.json({ updated, repeated: true, copied_todos: 0 });
+              // Copy open (not done) todos to the new repeated task, preserving order and estimates
+              db.all(
+                "SELECT title, estimated_minutes, sort_order FROM todos WHERE task_id=? AND done=0 ORDER BY CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END, sort_order, id",
+                [id],
+                (tErr, todos) => {
+                  if (tErr || !Array.isArray(todos) || todos.length === 0) {
+                    return res.json({
+                      updated,
+                      repeated: true,
+                      copied_todos: 0,
+                    });
+                  }
+                  const stmt = db.prepare(
+                    "INSERT INTO todos(task_id,title,estimated_minutes,sort_order) VALUES (?,?,?,?)"
+                  );
+                  db.run("BEGIN");
+                  for (const td of todos) {
+                    stmt.run([
+                      newTaskId,
+                      td.title,
+                      Number.isFinite(Number(td.estimated_minutes))
+                        ? Number(td.estimated_minutes)
+                        : null,
+                      Number.isFinite(Number(td.sort_order))
+                        ? Number(td.sort_order)
+                        : null,
+                    ]);
+                  }
+                  stmt.finalize((fe) => {
+                    if (fe) {
+                      try {
+                        db.run("ROLLBACK");
+                      } catch {}
+                      return res.json({
+                        updated,
+                        repeated: true,
+                        copied_todos: 0,
+                      });
+                    }
+                    db.run("COMMIT", () =>
+                      res.json({
+                        updated,
+                        repeated: true,
+                        copied_todos: todos.length,
+                      })
+                    );
+                  });
+                }
+              );
+            }
           );
         }
       );
@@ -758,7 +812,9 @@ router.post("/plans/:id/items", (req, res) => {
   if (!task_id && !todo_id)
     return res.status(400).json({ error: "task_id or todo_id required" });
   if (task_id && todo_id)
-    return res.status(400).json({ error: "provide only one of task_id or todo_id" });
+    return res
+      .status(400)
+      .json({ error: "provide only one of task_id or todo_id" });
   db.run(
     "INSERT INTO plan_items(plan_id,task_id,todo_id,planned_minutes,block,rocket) VALUES (?,?,?,?,?,?)",
     [
@@ -843,7 +899,8 @@ router.delete("/plans/:id/items/:itemId", (req, res) => {
     "DELETE FROM plan_items WHERE id=? AND plan_id=?",
     [Number(itemId), Number(id)],
     function (err) {
-      if (err) return res.status(500).json({ error: "db", detail: String(err) });
+      if (err)
+        return res.status(500).json({ error: "db", detail: String(err) });
       res.json({ deleted: this?.changes || 0 });
     }
   );

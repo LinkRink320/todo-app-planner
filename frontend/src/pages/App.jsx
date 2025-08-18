@@ -47,6 +47,7 @@ export default function App() {
     deadline: "",
     importance: "",
     estimated_minutes: "",
+    repeat: "",
   });
 
   const isMobile = useMemo(() => {
@@ -190,7 +191,7 @@ export default function App() {
     } else if (pid === "none") qs.set("project_id", "none");
     else if (pid) qs.set("project_id", String(pid));
     // In board/calendar view, fetch all statuses to populate columns/cells
-  if (view !== "list") qs.set("status", "all");
+    if (view !== "list") qs.set("status", "all");
     else if (status) qs.set("status", status);
     if (q) qs.set("q", q);
     if (fImportance) qs.set("importance", fImportance);
@@ -245,12 +246,13 @@ export default function App() {
       deadline: t.deadline ? t.deadline.replace(" ", "T") : "",
       importance: t.importance || "",
       estimated_minutes: t.estimated_minutes || "",
+      repeat: t.repeat || "",
     });
     if (view === "board") setView("list");
   }
   function cancelEdit() {
     setEditingId(null);
-    setEditVals({ title: "", deadline: "", importance: "" });
+    setEditVals({ title: "", deadline: "", importance: "", repeat: "" });
   }
   async function saveEdit(id) {
     const body = {
@@ -260,6 +262,7 @@ export default function App() {
       estimated_minutes: editVals.estimated_minutes
         ? Number(editVals.estimated_minutes)
         : null,
+      repeat: editVals.repeat || null,
     };
     const r = await fetch(`/api/tasks/${id}`, {
       method: "PATCH",
@@ -349,7 +352,6 @@ export default function App() {
             </div>
           </aside>
         )}
-
         <main className="panel">
           <div
             style={{
@@ -639,7 +641,21 @@ export default function App() {
                                     })
                                   }
                                 />
-                                <span />
+                                <select
+                                  value={editVals.repeat}
+                                  onChange={(e) =>
+                                    setEditVals({
+                                      ...editVals,
+                                      repeat: e.target.value,
+                                    })
+                                  }
+                                >
+                                  <option value="">繰り返し(任意)</option>
+                                  <option value="daily">毎日</option>
+                                  <option value="weekdays">平日</option>
+                                  <option value="weekly">毎週</option>
+                                  <option value="monthly">毎月</option>
+                                </select>
                               </div>
                             </>
                           ) : (
@@ -659,7 +675,9 @@ export default function App() {
                                         : "低"
                                     }`
                                   : ""}
-                                {t.soft_deadline ? ` ・ 内締切:${t.soft_deadline}` : ""}
+                                {t.soft_deadline
+                                  ? ` ・ 内締切:${t.soft_deadline}`
+                                  : ""}
                                 {t.importance
                                   ? ` ・ 重要度:${
                                       t.importance === "high"
