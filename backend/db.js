@@ -235,17 +235,23 @@ db.serialize(() => {
   db.run(
     "CREATE INDEX IF NOT EXISTS idx_plan_items_plan_block ON plan_items(plan_id, block)"
   );
-  // Ensure todo_id exists for older tables
+  // Ensure todo_id exists for older tables, then create related index
   db.all("PRAGMA table_info('plan_items')", (err, cols) => {
     if (err) return;
     const names = new Set((cols || []).map((c) => c.name));
+    const createIdx = () =>
+      db.run(
+        "CREATE INDEX IF NOT EXISTS idx_plan_items_plan_todo ON plan_items(plan_id, todo_id)"
+      );
     if (!names.has("todo_id")) {
-      db.run("ALTER TABLE plan_items ADD COLUMN todo_id INTEGER");
+      db.run("ALTER TABLE plan_items ADD COLUMN todo_id INTEGER", (e) => {
+        if (e) return; // If cannot add, skip index creation silently
+        createIdx();
+      });
+    } else {
+      createIdx();
     }
   });
-  db.run(
-    "CREATE INDEX IF NOT EXISTS idx_plan_items_plan_todo ON plan_items(plan_id, todo_id)"
-  );
 });
 
 module.exports = db;
