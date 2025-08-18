@@ -210,8 +210,8 @@ router.post("/tasks", (req, res) => {
     project_id,
     importance,
     repeat,
-  estimated_minutes,
-  soft_deadline,
+    estimated_minutes,
+    soft_deadline,
   } = req.body || {};
   if (!line_user_id || !title)
     return res.status(400).json({ error: "line_user_id and title required" });
@@ -250,7 +250,7 @@ router.patch("/tasks/:id", (req, res) => {
   const {
     title,
     deadline,
-  soft_deadline,
+    soft_deadline,
     project_id,
     importance,
     status,
@@ -745,7 +745,9 @@ router.post("/plans/:id/items/reorder", (req, res) => {
     "UPDATE plan_items SET order_index=? WHERE id=? AND plan_id=?"
   );
   db.run("BEGIN");
-  orderedIds.forEach((pid, idx) => stmt.run([idx + 1, Number(pid), Number(id)]));
+  orderedIds.forEach((pid, idx) =>
+    stmt.run([idx + 1, Number(pid), Number(id)])
+  );
   stmt.finalize((e) => {
     if (e) {
       try {
@@ -790,4 +792,17 @@ router.patch("/plans/:id/items/:itemId", (req, res) => {
     if (err) return res.status(500).json({ error: "db", detail: String(err) });
     res.json({ updated: this?.changes || 0 });
   });
+});
+
+// Delete plan item
+router.delete("/plans/:id/items/:itemId", (req, res) => {
+  const { id, itemId } = req.params;
+  db.run(
+    "DELETE FROM plan_items WHERE id=? AND plan_id=?",
+    [Number(itemId), Number(id)],
+    function (err) {
+      if (err) return res.status(500).json({ error: "db", detail: String(err) });
+      res.json({ deleted: this?.changes || 0 });
+    }
+  );
 });

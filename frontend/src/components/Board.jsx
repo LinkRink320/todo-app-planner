@@ -92,7 +92,8 @@ export default function Board({
         <div className="kanban-meta">
           {(t.deadline || "-") +
             (t.urgency ? ` ・ 緊急度:${label(t.urgency)}` : "") +
-            (t.importance ? ` ・ 重要度:${label(t.importance)}` : "")}
+            (t.importance ? ` ・ 重要度:${label(t.importance)}` : "") +
+            (t.soft_deadline ? ` ・ 内締切:${t.soft_deadline}` : "")}
         </div>
         <div className="row">
           <button className="ghost" onClick={() => onEdit(t)}>

@@ -3,6 +3,7 @@ import Board from "../components/Board.jsx";
 import Calendar from "../components/Calendar.jsx";
 import Week from "../components/Week.jsx";
 import Todos from "../components/Todos.jsx";
+import Plan from "../components/Plan.jsx";
 
 function getSession(k) {
   try {
@@ -24,7 +25,7 @@ export default function App() {
   const [pid, setPid] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [status, setStatus] = useState(getSession("TASK_STATUS") || "all");
-  const [view, setView] = useState(getSession("VIEW_MODE") || "list"); // list | board | calendar | week
+  const [view, setView] = useState(getSession("VIEW_MODE") || "list"); // list | board | calendar | week | plan
   const [pname, setPname] = useState("");
   const [ttitle, setTtitle] = useState("");
   const [tdeadline, setTdeadline] = useState("");
@@ -189,7 +190,7 @@ export default function App() {
     } else if (pid === "none") qs.set("project_id", "none");
     else if (pid) qs.set("project_id", String(pid));
     // In board/calendar view, fetch all statuses to populate columns/cells
-    if (view !== "list") qs.set("status", "all");
+  if (view !== "list") qs.set("status", "all");
     else if (status) qs.set("status", status);
     if (q) qs.set("q", q);
     if (fImportance) qs.set("importance", fImportance);
@@ -389,6 +390,12 @@ export default function App() {
                 >
                   週
                 </button>
+                <button
+                  className={view === "plan" ? "ghost" : ""}
+                  onClick={() => setView("plan")}
+                >
+                  プラン
+                </button>
               </div>
               <select
                 value={status}
@@ -587,7 +594,10 @@ export default function App() {
                                 }
                                 style={{ width: "100%", marginBottom: 6 }}
                               />
-                              <div className="grid-2" style={{ marginBottom: 6 }}>
+                              <div
+                                className="grid-2"
+                                style={{ marginBottom: 6 }}
+                              >
                                 <input
                                   type="datetime-local"
                                   value={editVals.deadline}
@@ -613,7 +623,10 @@ export default function App() {
                                   <option value="low">低</option>
                                 </select>
                               </div>
-                              <div className="grid-2" style={{ marginBottom: 6 }}>
+                              <div
+                                className="grid-2"
+                                style={{ marginBottom: 6 }}
+                              >
                                 <input
                                   type="number"
                                   min="0"
@@ -646,6 +659,7 @@ export default function App() {
                                         : "低"
                                     }`
                                   : ""}
+                                {t.soft_deadline ? ` ・ 内締切:${t.soft_deadline}` : ""}
                                 {t.importance
                                   ? ` ・ 重要度:${
                                       t.importance === "high"
@@ -657,7 +671,9 @@ export default function App() {
                                   : ""}
                                 {typeof t.todos_total === "number" &&
                                 t.todos_total > 0
-                                  ? ` ・ ✓ ${t.todos_done || 0}/${t.todos_total}`
+                                  ? ` ・ ✓ ${t.todos_done || 0}/${
+                                      t.todos_total
+                                    }`
                                   : ""}
                                 {t.type === "long" &&
                                 typeof t.progress === "number"
@@ -773,7 +789,7 @@ export default function App() {
                 }
               }}
             />
-          ) : (
+          ) : view === "week" ? (
             <Week
               tasks={tasks}
               onDropDate={async (taskId, dateStr) => {
@@ -801,6 +817,8 @@ export default function App() {
                 }
               }}
             />
+          ) : (
+            <Plan userId={uid} getHeaders={h} />
           )}
         </main>
       </div>
