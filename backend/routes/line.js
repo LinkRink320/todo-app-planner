@@ -7,18 +7,22 @@ const { URLSearchParams } = require("url");
 
 const router = express.Router();
 const client = new Client(line);
+// In-memory lightweight session for guided add flow
+const addSessions = new Map(); // key: userId -> { step: 'wait_title'|'choose_deadline', title: string }
 
 function appBaseFromReq(req) {
   const host = req.headers["x-forwarded-host"] || req.headers.host;
-  const proto = (req.headers["x-forwarded-proto"] || "https").split(
-    ","
-  )[0];
+  const proto = (req.headers["x-forwarded-proto"] || "https").split(",")[0];
   return env.PUBLIC_APP_URL || (host ? `${proto}://${host}` : null);
 }
 
 function quickReplyDefaults() {
   return {
     items: [
+      {
+        type: "action",
+        action: { type: "message", label: "追加", text: "追加" },
+      },
       {
         type: "action",
         action: { type: "message", label: "未完了", text: "ls" },
@@ -60,6 +64,62 @@ router.post("/webhook", middleware(line), async (req, res) => {
           const params = new URLSearchParams(e.postback.data);
           const action = params.get("action");
           const u = e.source.userId;
+          // Guided Add: create task from preset or datetimepicker
+          if (action === "add-create") {
+            const sess = addSessions.get(u);
+            const title = sess?.title;
+            if (!title) {
+              return replyTextWithQuick(
+                client,
+                e.replyToken,
+                "タイトルが未設定です。\n『追加』→ タイトル送信の順で操作してください。"
+              );
+            }
+            // Compute deadline
+            let deadline = null;
+            const preset = params.get("preset");
+            const now = new Date();
+            const pad = (n) => String(n).padStart(2, "0");
+            const fmt = (d, hh = "09", mm = "00") =>
+              `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${hh}:${mm}`;
+            const nextWeekday = () => {
+              const d = new Date();
+              do {
+                d.setDate(d.getDate() + 1);
+              } while ([0, 6].includes(d.getDay()));
+              return d;
+            };
+            if (e.postback.params?.datetime) {
+              const dt = new Date(e.postback.params.datetime);
+              if (!isNaN(dt.getTime())) {
+                deadline = fmt(dt, pad(dt.getHours()), pad(dt.getMinutes()));
+              }
+            } else if (preset === "today21") {
+              deadline = fmt(now, "21", "00");
+            } else if (preset === "tomorrow09") {
+              const d = new Date(now.getTime());
+              d.setDate(d.getDate() + 1);
+              deadline = fmt(d, "09", "00");
+            } else if (preset === "nextweekday09") {
+              const d = nextWeekday();
+              deadline = fmt(d, "09", "00");
+            } else if (preset === "none") {
+              deadline = null;
+            }
+            db.run(
+              "INSERT INTO tasks(line_user_id,title,deadline) VALUES (?,?,?)",
+              [u, title, deadline],
+              () => {
+                addSessions.delete(u);
+                replyTextWithQuick(
+                  client,
+                  e.replyToken,
+                  `登録OK: ${deadline || "(期限なし)"} ${title}`
+                );
+              }
+            );
+            return;
+          }
           if (action === "done") {
             const id = Number(params.get("id"));
             if (id) {
@@ -100,7 +160,50 @@ router.post("/webhook", middleware(line), async (req, res) => {
         }
         if (e.type !== "message" || e.message.type !== "text") return;
         const u = e.source.userId;
-        const cmd = parse(e.message.text);
+        const textRaw = (e.message.text || "").trim();
+        // Guided Add flow: start
+        if (["追加", "+"].includes(textRaw)) {
+          addSessions.set(u, { step: "wait_title" });
+          return client.replyMessage(e.replyToken, {
+            type: "text",
+            text: "タイトルを送ってください (例: 資料作成)",
+            quickReply: {
+              items: [
+                {
+                  type: "action",
+                  action: { type: "message", label: "キャンセル", text: "キャンセル" },
+                },
+              ],
+            },
+          });
+        }
+        if (["キャンセル", "cancel"].includes(textRaw)) {
+          if (addSessions.has(u)) addSessions.delete(u);
+          return replyTextWithQuick(client, e.replyToken, "キャンセルしました。");
+        }
+        // If waiting for title, capture and ask for deadline
+        const sess = addSessions.get(u);
+        if (sess?.step === "wait_title") {
+          const title = textRaw;
+          if (!title) return replyTextWithQuick(client, e.replyToken, "タイトルが空です。");
+          addSessions.set(u, { step: "choose_deadline", title });
+          return client.replyMessage(e.replyToken, {
+            type: "template",
+            altText: "期限を選択",
+            template: {
+              type: "buttons",
+              title: "期限を選択",
+              text: `『${title}』の期限を選んでください`,
+              actions: [
+                { type: "postback", label: "期限なし", data: "action=add-create&preset=none" },
+                { type: "postback", label: "今日21時", data: "action=add-create&preset=today21" },
+                { type: "postback", label: "明日9時", data: "action=add-create&preset=tomorrow09" },
+                { type: "datetimepicker", label: "日時指定", data: "action=add-create", mode: "datetime" },
+              ],
+            },
+          });
+        }
+        const cmd = parse(textRaw);
         if (cmd.type === "app_url") {
           // Prefer explicit PUBLIC_APP_URL; fallback to inferring from Host header
           const base = appBaseFromReq(req);
@@ -208,9 +311,9 @@ router.post("/webhook", middleware(line), async (req, res) => {
               replyTextWithQuick(
                 client,
                 e.replyToken,
-                `P${cmd.projectId} に登録OK: ${
-                  cmd.deadline || "(期限なし)"
-                } ${cmd.title}`
+                `P${cmd.projectId} に登録OK: ${cmd.deadline || "(期限なし)"} ${
+                  cmd.title
+                }`
               );
             }
           );
@@ -360,7 +463,11 @@ router.post("/webhook", middleware(line), async (req, res) => {
               { type: "message", label: "未完了", text: "ls" },
               { type: "message", label: "長期", text: "lsl" },
               { type: "message", label: "MyID", text: "whoami" },
-              { type: "uri", label: "アプリ", uri: base || "https://example.com" },
+              {
+                type: "uri",
+                label: "アプリ",
+                uri: base || "https://example.com",
+              },
             ],
           },
         });
