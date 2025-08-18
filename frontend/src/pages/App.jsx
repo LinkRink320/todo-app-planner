@@ -27,6 +27,8 @@ export default function App() {
   const [status, setStatus] = useState(getSession("TASK_STATUS") || "all");
   const [view, setView] = useState(getSession("VIEW_MODE") || "list"); // list | board | calendar | week | plan
   const [pname, setPname] = useState("");
+  const [pgoal, setPgoal] = useState("");
+  const [pdesc, setPdesc] = useState("");
   const [ttitle, setTtitle] = useState("");
   const [tdeadline, setTdeadline] = useState("");
   const [timportance, setTimportance] = useState("");
@@ -48,6 +50,8 @@ export default function App() {
     importance: "",
     estimated_minutes: "",
     repeat: "",
+  url: "",
+  details_md: "",
   });
 
   const isMobile = useMemo(() => {
@@ -120,10 +124,12 @@ export default function App() {
     const r = await fetch("/api/projects", {
       method: "POST",
       headers: await h(),
-      body: JSON.stringify({ line_user_id: uid, name: pname }),
+      body: JSON.stringify({ line_user_id: uid, name: pname, goal: pgoal, description: pdesc }),
     });
     if (!r.ok) return showErr(`create project ${r.status}`);
     setPname("");
+    setPgoal("");
+    setPdesc("");
     loadProjects();
     showMsg("プロジェクトを追加しました");
   }
@@ -247,6 +253,8 @@ export default function App() {
       importance: t.importance || "",
       estimated_minutes: t.estimated_minutes || "",
       repeat: t.repeat || "",
+  url: t.url || "",
+  details_md: t.details_md || "",
     });
     if (view === "board") setView("list");
   }
@@ -263,6 +271,8 @@ export default function App() {
         ? Number(editVals.estimated_minutes)
         : null,
       repeat: editVals.repeat || null,
+  url: editVals.url || null,
+  details_md: editVals.details_md || null,
     };
     const r = await fetch(`/api/tasks/${id}`, {
       method: "PATCH",
@@ -349,6 +359,38 @@ export default function App() {
                 onChange={(e) => setPname(e.target.value)}
               />
               <button onClick={createProject}>追加</button>
+            </div>
+              <div className="grid-2" style={{ marginTop: 6 }}>
+                <input
+                  placeholder="目標(任意)"
+                  value={pgoal}
+                  onChange={(e) => setPgoal(e.target.value)}
+                />
+                <span />
+              </div>
+              <div style={{ marginTop: 6 }}>
+                <textarea
+                  rows={3}
+                  placeholder="説明(マークダウン可) 任意"
+                  value={pdesc}
+                  onChange={(e) => setPdesc(e.target.value)}
+                />
+              </div>
+            <div className="grid-2" style={{ marginTop: 8 }}>
+              <input
+                placeholder="目標(任意)"
+                value={pgoal}
+                onChange={(e) => setPgoal(e.target.value)}
+              />
+              <span />
+            </div>
+            <div style={{ marginTop: 8 }}>
+              <textarea
+                placeholder="説明(マークダウン可) 任意"
+                rows={4}
+                value={pdesc}
+                onChange={(e) => setPdesc(e.target.value)}
+              />
             </div>
           </aside>
         )}
@@ -657,6 +699,26 @@ export default function App() {
                                   <option value="monthly">毎月</option>
                                 </select>
                               </div>
+                              <div className="grid-2" style={{ marginBottom: 6 }}>
+                                <input
+                                  placeholder="関連URL(任意)"
+                                  value={editVals.url}
+                                  onChange={(e) =>
+                                    setEditVals({ ...editVals, url: e.target.value })
+                                  }
+                                />
+                                <span />
+                              </div>
+                              <div style={{ marginBottom: 6 }}>
+                                <textarea
+                                  rows={4}
+                                  placeholder="詳細(マークダウン可) 任意"
+                                  value={editVals.details_md}
+                                  onChange={(e) =>
+                                    setEditVals({ ...editVals, details_md: e.target.value })
+                                  }
+                                />
+                              </div>
                             </>
                           ) : (
                             <>
@@ -666,6 +728,7 @@ export default function App() {
                                 {typeof t.estimated_minutes === "number"
                                   ? ` ・ 目安:${t.estimated_minutes}分`
                                   : ""}
+                                {t.url ? " ・ 🔗" : ""}
                                 {t.urgency
                                   ? ` ・ 緊急度:${
                                       t.urgency === "high"

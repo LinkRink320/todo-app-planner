@@ -86,7 +86,7 @@ router.get("/projects", (req, res) => {
   if (!line_user_id)
     return res.status(400).json({ error: "line_user_id required" });
   db.all(
-    "SELECT id,name,status,created_at,updated_at FROM projects WHERE line_user_id=? AND status='active' ORDER BY id DESC",
+  "SELECT id,name,status,goal,description,created_at,updated_at FROM projects WHERE line_user_id=? AND status='active' ORDER BY id DESC",
     [line_user_id],
     (e, rows) => {
       if (e) return res.status(500).json({ error: "db", detail: String(e) });
@@ -96,12 +96,12 @@ router.get("/projects", (req, res) => {
 });
 
 router.post("/projects", (req, res) => {
-  const { line_user_id, name } = req.body || {};
+  const { line_user_id, name, goal, description } = req.body || {};
   if (!line_user_id || !name)
     return res.status(400).json({ error: "line_user_id and name required" });
   db.run(
-    "INSERT INTO projects(line_user_id,name) VALUES(?,?)",
-    [line_user_id, name],
+    "INSERT INTO projects(line_user_id,name,goal,description) VALUES(?,?,?,?)",
+    [line_user_id, name, goal || null, description || null],
     function (err) {
       if (err)
         return res.status(500).json({ error: "db", detail: String(err) });
@@ -157,7 +157,7 @@ router.get("/tasks", (req, res) => {
   const where = "WHERE " + conds.join(" AND ");
   const lim = Math.min(Math.max(parseInt(limit || 200, 10) || 200, 1), 1000);
   db.all(
-    `SELECT id,title,deadline,soft_deadline,status,project_id,type,progress,importance,sort_order,repeat,estimated_minutes FROM tasks ${where} ORDER BY CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END, sort_order ASC, CASE WHEN deadline IS NULL THEN 1 ELSE 0 END, deadline ASC LIMIT ?`,
+    `SELECT id,title,deadline,soft_deadline,status,project_id,type,progress,importance,sort_order,repeat,estimated_minutes,url,details_md FROM tasks ${where} ORDER BY CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END, sort_order ASC, CASE WHEN deadline IS NULL THEN 1 ELSE 0 END, deadline ASC LIMIT ?`,
     [...args, lim],
     (e, rows) => {
       if (e) return res.status(500).json({ error: "db", detail: String(e) });
@@ -211,7 +211,9 @@ router.post("/tasks", (req, res) => {
     importance,
     repeat,
     estimated_minutes,
-    soft_deadline,
+  soft_deadline,
+  url,
+  details_md,
   } = req.body || {};
   if (!line_user_id || !title)
     return res.status(400).json({ error: "line_user_id and title required" });
@@ -226,7 +228,7 @@ router.post("/tasks", (req, res) => {
     ? Number(estimated_minutes)
     : null;
   db.run(
-    "INSERT INTO tasks(line_user_id,title,deadline,soft_deadline,project_id,importance,repeat,estimated_minutes) VALUES (?,?,?,?,?,?,?,?)",
+    "INSERT INTO tasks(line_user_id,title,deadline,soft_deadline,project_id,importance,repeat,estimated_minutes,url,details_md) VALUES (?,?,?,?,?,?,?,?,?,?)",
     [
       line_user_id,
       title,
@@ -236,6 +238,8 @@ router.post("/tasks", (req, res) => {
       imp,
       rep,
       est,
+      url || null,
+      details_md || null,
     ],
     function (err) {
       if (err)
@@ -256,7 +260,9 @@ router.patch("/tasks/:id", (req, res) => {
     status,
     repeat,
     sort_order,
-    estimated_minutes,
+  estimated_minutes,
+  url,
+  details_md,
   } = req.body || {};
 
   const sets = [];
@@ -315,6 +321,14 @@ router.patch("/tasks/:id", (req, res) => {
     sets.push("estimated_minutes=?");
     args.push(est);
   }
+  if (typeof url !== "undefined") {
+    sets.push("url=?");
+    args.push(url ? String(url) : null);
+  }
+  if (typeof details_md !== "undefined") {
+    sets.push("details_md=?");
+    args.push(details_md ? String(details_md) : null);
+  }
   if (typeof status !== "undefined") {
     const s = String(status);
     if (!["pending", "done", "failed"].includes(s))
@@ -336,7 +350,7 @@ router.patch("/tasks/:id", (req, res) => {
     // If marked done and task has repeat and deadline, create next occurrence
     if (updated && typeof status !== "undefined" && String(status) === "done") {
       db.get(
-        "SELECT line_user_id,title,deadline,soft_deadline,project_id,importance,repeat,estimated_minutes FROM tasks WHERE id=?",
+  "SELECT line_user_id,title,deadline,soft_deadline,project_id,importance,repeat,estimated_minutes,url,details_md FROM tasks WHERE id=?",
         [id],
         (gErr, row) => {
           if (gErr || !row) return res.json({ updated });
@@ -345,7 +359,7 @@ router.patch("/tasks/:id", (req, res) => {
           const next = calcNextDeadline(row.deadline, rep);
           if (!next) return res.json({ updated });
           db.run(
-            "INSERT INTO tasks(line_user_id,title,deadline,soft_deadline,project_id,importance,repeat,estimated_minutes) VALUES (?,?,?,?,?,?,?,?)",
+            "INSERT INTO tasks(line_user_id,title,deadline,soft_deadline,project_id,importance,repeat,estimated_minutes,url,details_md) VALUES (?,?,?,?,?,?,?,?,?,?)",
             [
               row.line_user_id,
               row.title,
@@ -355,6 +369,8 @@ router.patch("/tasks/:id", (req, res) => {
               row.importance || null,
               rep,
               row.estimated_minutes || null,
+              row.url || null,
+              row.details_md || null,
             ],
             function (insErr) {
               if (insErr) return res.json({ updated, repeated: false });
@@ -374,7 +390,7 @@ router.patch("/tasks/:id", (req, res) => {
                     });
                   }
                   const stmt = db.prepare(
-                    "INSERT INTO todos(task_id,title,estimated_minutes,sort_order) VALUES (?,?,?,?)"
+                    "INSERT INTO todos(task_id,title,estimated_minutes,sort_order,url,details_md) VALUES (?,?,?,?,?,?)"
                   );
                   db.run("BEGIN");
                   for (const td of todos) {
@@ -387,6 +403,8 @@ router.patch("/tasks/:id", (req, res) => {
                       Number.isFinite(Number(td.sort_order))
                         ? Number(td.sort_order)
                         : null,
+                      td.url || null,
+                      td.details_md || null,
                     ]);
                   }
                   stmt.finalize((fe) => {
@@ -608,17 +626,19 @@ module.exports = router;
 // --- Todos (subtasks) API ---
 // Create todo
 router.post("/todos", (req, res) => {
-  const { task_id, title, estimated_minutes } = req.body || {};
+  const { task_id, title, estimated_minutes, url, details_md } = req.body || {};
   if (!task_id || !title)
     return res.status(400).json({ error: "task_id and title required" });
   db.run(
-    "INSERT INTO todos(task_id,title,estimated_minutes) VALUES(?,?,?)",
+    "INSERT INTO todos(task_id,title,estimated_minutes,url,details_md) VALUES(?,?,?,?,?)",
     [
       Number(task_id),
       String(title),
       Number.isFinite(Number(estimated_minutes))
         ? Number(estimated_minutes)
         : null,
+      url || null,
+      details_md || null,
     ],
     function (err) {
       if (err)
@@ -633,7 +653,7 @@ router.get("/todos", (req, res) => {
   const { task_id } = req.query || {};
   if (!task_id) return res.status(400).json({ error: "task_id required" });
   db.all(
-    "SELECT id,task_id,title,done,estimated_minutes,sort_order,created_at,updated_at FROM todos WHERE task_id=? ORDER BY CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END, sort_order, id",
+  "SELECT id,task_id,title,done,estimated_minutes,url,details_md,sort_order,created_at,updated_at FROM todos WHERE task_id=? ORDER BY CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END, sort_order, id",
     [Number(task_id)],
     (e, rows) => {
       if (e) return res.status(500).json({ error: "db", detail: String(e) });
@@ -676,7 +696,8 @@ router.get("/todos/by-user", (req, res) => {
 // Update todo (title, done, sort_order)
 router.patch("/todos/:id", (req, res) => {
   const { id } = req.params;
-  const { title, done, sort_order, estimated_minutes } = req.body || {};
+  const { title, done, sort_order, estimated_minutes, url, details_md } =
+    req.body || {};
   const sets = [];
   const args = [];
   if (typeof title !== "undefined") {
@@ -700,6 +721,14 @@ router.patch("/todos/:id", (req, res) => {
       : null;
     sets.push("estimated_minutes=?");
     args.push(est);
+  }
+  if (typeof url !== "undefined") {
+    sets.push("url=?");
+    args.push(url ? String(url) : null);
+  }
+  if (typeof details_md !== "undefined") {
+    sets.push("details_md=?");
+    args.push(details_md ? String(details_md) : null);
   }
   if (!sets.length)
     return res.status(400).json({ error: "no fields to update" });

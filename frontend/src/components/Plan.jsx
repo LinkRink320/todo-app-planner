@@ -28,8 +28,8 @@ export default function Plan({ userId, getHeaders }) {
       body: JSON.stringify({ line_user_id: userId, date }),
     });
     await load();
-  await loadTasks();
-  await loadTodos();
+    await loadTasks();
+    await loadTodos();
   }
 
   async function load() {
@@ -152,7 +152,10 @@ export default function Plan({ userId, getHeaders }) {
 
       <div className="grid-2" style={{ marginTop: 8 }}>
         <div>
-          <div className="row" style={{ justifyContent: "space-between", marginBottom: 6 }}>
+          <div
+            className="row"
+            style={{ justifyContent: "space-between", marginBottom: 6 }}
+          >
             <div style={{ fontWeight: 600 }}>候補（未完了）</div>
             <div className="row">
               <label className="row" style={{ gap: 4 }}>
@@ -179,21 +182,49 @@ export default function Plan({ userId, getHeaders }) {
               value={q}
               onChange={(e) => setQ(e.target.value)}
               onKeyDown={(e) =>
-                e.key === "Enter" && (source === "tasks" ? loadTasks() : loadTodos())
+                e.key === "Enter" &&
+                (source === "tasks" ? loadTasks() : loadTodos())
               }
             />
-            <button onClick={source === "tasks" ? loadTasks : loadTodos}>検索</button>
+            <button onClick={source === "tasks" ? loadTasks : loadTodos}>
+              検索
+            </button>
           </div>
           {source === "tasks" ? (
             <ul className="list" style={{ maxHeight: 260, overflow: "auto" }}>
               {tasks.map((t) => (
-                <li key={t.id} className="row" style={{ justifyContent: "space-between" }}>
+                <li
+                  key={t.id}
+                  className="row"
+                  style={{ justifyContent: "space-between" }}
+                >
                   <span>{t.title}</span>
                   <div className="row">
-                    <button disabled={busy} onClick={() => addTask(t.id, { block: "morning" })}>午前</button>
-                    <button disabled={busy} onClick={() => addTask(t.id, { block: "afternoon" })}>午後</button>
-                    <button disabled={busy} onClick={() => addTask(t.id, { block: "evening" })}>夜</button>
-                    <button className="ghost" disabled={busy} onClick={() => addTask(t.id, { rocket: true })}>Rocket</button>
+                    <button
+                      disabled={busy}
+                      onClick={() => addTask(t.id, { block: "morning" })}
+                    >
+                      午前
+                    </button>
+                    <button
+                      disabled={busy}
+                      onClick={() => addTask(t.id, { block: "afternoon" })}
+                    >
+                      午後
+                    </button>
+                    <button
+                      disabled={busy}
+                      onClick={() => addTask(t.id, { block: "evening" })}
+                    >
+                      夜
+                    </button>
+                    <button
+                      className="ghost"
+                      disabled={busy}
+                      onClick={() => addTask(t.id, { rocket: true })}
+                    >
+                      Rocket
+                    </button>
                   </div>
                 </li>
               ))}
@@ -201,18 +232,45 @@ export default function Plan({ userId, getHeaders }) {
           ) : (
             <ul className="list" style={{ maxHeight: 260, overflow: "auto" }}>
               {todos.map((td) => (
-                <li key={td.id} className="row" style={{ justifyContent: "space-between" }}>
+                <li
+                  key={td.id}
+                  className="row"
+                  style={{ justifyContent: "space-between" }}
+                >
                   <span>
                     {td.title}
-                    <span style={{ color: "#999", marginLeft: 6, fontSize: 12 }}>
+                    <span
+                      style={{ color: "#999", marginLeft: 6, fontSize: 12 }}
+                    >
                       （{td.task_title}）
                     </span>
                   </span>
                   <div className="row">
-                    <button disabled={busy} onClick={() => addTodo(td.id, { block: "morning" })}>午前</button>
-                    <button disabled={busy} onClick={() => addTodo(td.id, { block: "afternoon" })}>午後</button>
-                    <button disabled={busy} onClick={() => addTodo(td.id, { block: "evening" })}>夜</button>
-                    <button className="ghost" disabled={busy} onClick={() => addTodo(td.id, { rocket: true })}>Rocket</button>
+                    <button
+                      disabled={busy}
+                      onClick={() => addTodo(td.id, { block: "morning" })}
+                    >
+                      午前
+                    </button>
+                    <button
+                      disabled={busy}
+                      onClick={() => addTodo(td.id, { block: "afternoon" })}
+                    >
+                      午後
+                    </button>
+                    <button
+                      disabled={busy}
+                      onClick={() => addTodo(td.id, { block: "evening" })}
+                    >
+                      夜
+                    </button>
+                    <button
+                      className="ghost"
+                      disabled={busy}
+                      onClick={() => addTodo(td.id, { rocket: true })}
+                    >
+                      Rocket
+                    </button>
                   </div>
                 </li>
               ))}
@@ -225,18 +283,35 @@ export default function Plan({ userId, getHeaders }) {
             {filtered.map((it, idx) => (
               <li key={it.id} className="row" style={{ alignItems: "stretch" }}>
                 <div style={{ flex: 1 }}>
-                  <div className="row" style={{ justifyContent: "space-between" }}>
+                  <div
+                    className="row"
+                    style={{ justifyContent: "space-between" }}
+                  >
                     <span>#{idx + 1}</span>
                     <div className="row">
-                      <button className="ghost" onClick={() => move(it.id, "up")}>↑</button>
-                      <button className="ghost" onClick={() => move(it.id, "down")}>↓</button>
-                      <button className="ghost" onClick={() => remove(it.id)}>×</button>
+                      <button
+                        className="ghost"
+                        onClick={() => move(it.id, "up")}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        className="ghost"
+                        onClick={() => move(it.id, "down")}
+                      >
+                        ↓
+                      </button>
+                      <button className="ghost" onClick={() => remove(it.id)}>
+                        ×
+                      </button>
                     </div>
                   </div>
                   <div className="grid-2" style={{ marginTop: 4 }}>
                     <select
                       value={it.block || ""}
-                      onChange={(e) => patchItem(it.id, { block: e.target.value || null })}
+                      onChange={(e) =>
+                        patchItem(it.id, { block: e.target.value || null })
+                      }
                     >
                       <option value="">未指定</option>
                       <option value="morning">午前</option>
@@ -249,14 +324,22 @@ export default function Plan({ userId, getHeaders }) {
                         min={0}
                         placeholder="見積(分)"
                         value={it.planned_minutes || ""}
-                        onChange={(e) => patchItem(it.id, { planned_minutes: e.target.value ? Number(e.target.value) : null })}
+                        onChange={(e) =>
+                          patchItem(it.id, {
+                            planned_minutes: e.target.value
+                              ? Number(e.target.value)
+                              : null,
+                          })
+                        }
                         style={{ width: 120 }}
                       />
                       <label className="row" style={{ gap: 4 }}>
                         <input
                           type="checkbox"
                           checked={!!it.rocket}
-                          onChange={(e) => patchItem(it.id, { rocket: e.target.checked })}
+                          onChange={(e) =>
+                            patchItem(it.id, { rocket: e.target.checked })
+                          }
                         />
                         Rocket
                       </label>

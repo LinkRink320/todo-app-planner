@@ -10,7 +10,10 @@ export default function Calendar({ tasks, onDropDate }) {
     return new Date(d.getFullYear(), d.getMonth(), 1);
   });
 
-  const { weeks, byDate, undated } = useMemo(() => groupTasks(cursor, tasks), [cursor, tasks]);
+  const { weeks, byDate, undated } = useMemo(
+    () => groupTasks(cursor, tasks),
+    [cursor, tasks]
+  );
 
   function prevMonth() {
     const d = new Date(cursor);
@@ -41,15 +44,25 @@ export default function Calendar({ tasks, onDropDate }) {
   return (
     <div className="calendar">
       <div className="calendar-head">
-        <button className="ghost" onClick={prevMonth}>◀</button>
+        <button className="ghost" onClick={prevMonth}>
+          ◀
+        </button>
         <div className="calendar-title">
           {cursor.getFullYear()}年 {cursor.getMonth() + 1}月
         </div>
-        <button className="ghost" onClick={nextMonth}>▶</button>
+        <button className="ghost" onClick={nextMonth}>
+          ▶
+        </button>
       </div>
 
-      <div className="calendar-undated" onDragOver={onDragOver} onDrop={handleDrop("")}>
-        <div className="calendar-undated-title">期限なしにドロップで締切をクリア</div>
+      <div
+        className="calendar-undated"
+        onDragOver={onDragOver}
+        onDrop={handleDrop("")}
+      >
+        <div className="calendar-undated-title">
+          期限なしにドロップで締切をクリア
+        </div>
         <div className="calendar-undated-list">
           {undated.map((t) => (
             <TaskPill key={t.id} task={t} />
@@ -59,7 +72,9 @@ export default function Calendar({ tasks, onDropDate }) {
 
       <div className="calendar-grid">
         {weekdays.map((w) => (
-          <div key={w} className="calendar-dow">{w}</div>
+          <div key={w} className="calendar-dow">
+            {w}
+          </div>
         ))}
         {weeks.map((week, wIdx) =>
           week.map((cell) => (
@@ -69,7 +84,9 @@ export default function Calendar({ tasks, onDropDate }) {
               onDragOver={onDragOver}
               onDrop={handleDrop(cell.date)}
             >
-              <div className="calendar-date">{Number(cell.date.split("-")[2])}</div>
+              <div className="calendar-date">
+                {Number(cell.date.split("-")[2])}
+              </div>
               <div className="calendar-cell-body">
                 {(byDate.get(cell.date) || []).map((t) => (
                   <TaskPill key={t.id} task={t} />
@@ -89,7 +106,12 @@ function TaskPill({ task }) {
     e.dataTransfer.effectAllowed = "move";
   }
   return (
-    <div className={`pill pill-${task.status}`} draggable onDragStart={onDragStart} title={task.title}>
+    <div
+      className={`pill pill-${task.status}`}
+      draggable
+      onDragStart={onDragStart}
+      title={task.title}
+    >
       <span className="pill-dot" />
       <span className="pill-text">{task.title}</span>
     </div>

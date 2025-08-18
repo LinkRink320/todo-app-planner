@@ -143,7 +143,11 @@ function groupWeekTasks(weekStart, tasks) {
 
   const end = new Date(weekStart);
   end.setDate(end.getDate() + 6);
-  const rangeLabel = `${weekStart.getFullYear()}年 ${weekStart.getMonth() + 1}月 ${weekStart.getDate()}日 〜 ${end.getFullYear()}年 ${end.getMonth() + 1}月 ${end.getDate()}日`;
+  const rangeLabel = `${weekStart.getFullYear()}年 ${
+    weekStart.getMonth() + 1
+  }月 ${weekStart.getDate()}日 〜 ${end.getFullYear()}年 ${
+    end.getMonth() + 1
+  }月 ${end.getDate()}日`;
 
   return { days, byDate, undated, rangeLabel };
 }

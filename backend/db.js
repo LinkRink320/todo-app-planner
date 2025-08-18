@@ -23,6 +23,8 @@ db.serialize(() => {
     line_user_id TEXT NOT NULL,
     title TEXT NOT NULL,
     deadline TEXT,
+  url TEXT,
+  details_md TEXT,
     status TEXT NOT NULL DEFAULT 'pending',
     created_at TEXT DEFAULT (datetime('now','localtime'))
   )`);
@@ -55,6 +57,9 @@ db.serialize(() => {
       alters.push("ALTER TABLE tasks ADD COLUMN estimated_minutes INTEGER");
     if (!names.has("soft_deadline"))
       alters.push("ALTER TABLE tasks ADD COLUMN soft_deadline TEXT");
+    if (!names.has("url")) alters.push("ALTER TABLE tasks ADD COLUMN url TEXT");
+    if (!names.has("details_md"))
+      alters.push("ALTER TABLE tasks ADD COLUMN details_md TEXT");
 
     // If deadline column is NOT NULL, migrate to allow NULL (optional deadline)
     const deadlineCol = (cols || []).find((c) => c.name === "deadline");
@@ -129,12 +134,22 @@ db.serialize(() => {
     line_user_id TEXT NOT NULL,
     name TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'active',
+    goal TEXT,
+    description TEXT,
     created_at TEXT DEFAULT (datetime('now','localtime')),
     updated_at TEXT
   )`);
   db.run(
     "CREATE INDEX IF NOT EXISTS idx_projects_user ON projects(line_user_id)"
   );
+  // Ensure goal/description exist for older projects tables
+  db.all("PRAGMA table_info('projects')", (err, cols) => {
+    if (err) return;
+    const names = new Set((cols || []).map((c) => c.name));
+    if (!names.has("goal")) db.run("ALTER TABLE projects ADD COLUMN goal TEXT");
+    if (!names.has("description"))
+      db.run("ALTER TABLE projects ADD COLUMN description TEXT");
+  });
 
   // Sub-tasks (Todos) under tasks
   db.run(`CREATE TABLE IF NOT EXISTS todos(
@@ -143,6 +158,8 @@ db.serialize(() => {
     title TEXT NOT NULL,
     done INTEGER NOT NULL DEFAULT 0,
     estimated_minutes INTEGER,
+    url TEXT,
+    details_md TEXT,
     sort_order INTEGER,
     created_at TEXT DEFAULT (datetime('now','localtime')),
     updated_at TEXT
@@ -154,6 +171,9 @@ db.serialize(() => {
     if (!names.has("estimated_minutes")) {
       db.run("ALTER TABLE todos ADD COLUMN estimated_minutes INTEGER");
     }
+    if (!names.has("url")) db.run("ALTER TABLE todos ADD COLUMN url TEXT");
+    if (!names.has("details_md"))
+      db.run("ALTER TABLE todos ADD COLUMN details_md TEXT");
   });
   db.run("CREATE INDEX IF NOT EXISTS idx_todos_task ON todos(task_id)");
   db.run(
