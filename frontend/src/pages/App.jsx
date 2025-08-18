@@ -54,6 +54,12 @@ export default function App() {
   details_md: "",
   });
 
+  const currentProject = useMemo(() => {
+    return typeof pid === "number"
+      ? projects.find((p) => Number(p.id) === Number(pid)) || null
+      : null;
+  }, [projects, pid]);
+
   const isMobile = useMemo(() => {
     if (typeof window === "undefined") return false;
     return window.matchMedia && window.matchMedia("(max-width: 800px)").matches;
@@ -404,8 +410,22 @@ export default function App() {
           >
             <div>
               <div style={{ fontWeight: 600 }}>
-                タスク {pid ? `- P${pid}` : ""}
+                タスク
+                {pid === null
+                  ? " - すべて"
+                  : pid === "none"
+                  ? " - 未分類"
+                  : currentProject
+                  ? ` - ${currentProject.name}`
+                  : pid
+                  ? ` - P${pid}`
+                  : ""}
               </div>
+              {currentProject?.goal ? (
+                <div style={{ color: "#555", marginTop: 2 }}>
+                  目標: {currentProject.goal}
+                </div>
+              ) : null}
               <div style={{ color: "#777" }}>期限は YYYY-MM-DD HH:mm</div>
             </div>
             <div>
