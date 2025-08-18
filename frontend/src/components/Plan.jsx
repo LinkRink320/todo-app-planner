@@ -4,7 +4,9 @@ export default function Plan({ userId, getHeaders }) {
   const [date, setDate] = useState(() => today());
   const [plan, setPlan] = useState(null);
   const [tasks, setTasks] = useState([]);
+  const [todos, setTodos] = useState([]);
   const [q, setQ] = useState("");
+  const [source, setSource] = useState("tasks"); // 'tasks' | 'todos'
   const [blockFilter, setBlockFilter] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -26,7 +28,8 @@ export default function Plan({ userId, getHeaders }) {
       body: JSON.stringify({ line_user_id: userId, date }),
     });
     await load();
-    await loadTasks();
+  await loadTasks();
+  await loadTodos();
   }
 
   async function load() {
@@ -46,13 +49,33 @@ export default function Plan({ userId, getHeaders }) {
     if (r.ok) setTasks(await r.json());
   }
 
-  async function add(taskId, opts = {}) {
+  async function loadTodos() {
+    const qs = new URLSearchParams({ line_user_id: userId });
+    const r = await fetch(`/api/todos/by-user?${qs.toString()}`, {
+      headers: await getHeaders(),
+    });
+    if (r.ok) setTodos(await r.json());
+  }
+
+  async function addTask(taskId, opts = {}) {
     if (!plan?.id) return;
     setBusy(true);
     await fetch(`/api/plans/${plan.id}/items`, {
       method: "POST",
       headers: await getHeaders(),
       body: JSON.stringify({ task_id: taskId, ...opts }),
+    });
+    await load();
+    setBusy(false);
+  }
+
+  async function addTodo(todoId, opts = {}) {
+    if (!plan?.id) return;
+    setBusy(true);
+    await fetch(`/api/plans/${plan.id}/items`, {
+      method: "POST",
+      headers: await getHeaders(),
+      body: JSON.stringify({ todo_id: todoId, ...opts }),
     });
     await load();
     setBusy(false);
@@ -129,29 +152,72 @@ export default function Plan({ userId, getHeaders }) {
 
       <div className="grid-2" style={{ marginTop: 8 }}>
         <div>
-          <div style={{ fontWeight: 600, marginBottom: 6 }}>候補（未完了）</div>
+          <div className="row" style={{ justifyContent: "space-between", marginBottom: 6 }}>
+            <div style={{ fontWeight: 600 }}>候補（未完了）</div>
+            <div className="row">
+              <label className="row" style={{ gap: 4 }}>
+                <input
+                  type="radio"
+                  checked={source === "tasks"}
+                  onChange={() => setSource("tasks")}
+                />
+                タスク
+              </label>
+              <label className="row" style={{ gap: 4 }}>
+                <input
+                  type="radio"
+                  checked={source === "todos"}
+                  onChange={() => setSource("todos")}
+                />
+                Todo
+              </label>
+            </div>
+          </div>
           <div className="grid-2" style={{ marginBottom: 8 }}>
             <input
               placeholder="検索"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && loadTasks()}
+              onKeyDown={(e) =>
+                e.key === "Enter" && (source === "tasks" ? loadTasks() : loadTodos())
+              }
             />
-            <button onClick={loadTasks}>検索</button>
+            <button onClick={source === "tasks" ? loadTasks : loadTodos}>検索</button>
           </div>
-          <ul className="list" style={{ maxHeight: 260, overflow: "auto" }}>
-            {tasks.map((t) => (
-              <li key={t.id} className="row" style={{ justifyContent: "space-between" }}>
-                <span>{t.title}</span>
-                <div className="row">
-                  <button disabled={busy} onClick={() => add(t.id, { block: "morning" })}>午前</button>
-                  <button disabled={busy} onClick={() => add(t.id, { block: "afternoon" })}>午後</button>
-                  <button disabled={busy} onClick={() => add(t.id, { block: "evening" })}>夜</button>
-                  <button className="ghost" disabled={busy} onClick={() => add(t.id, { rocket: true })}>Rocket</button>
-                </div>
-              </li>
-            ))}
-          </ul>
+          {source === "tasks" ? (
+            <ul className="list" style={{ maxHeight: 260, overflow: "auto" }}>
+              {tasks.map((t) => (
+                <li key={t.id} className="row" style={{ justifyContent: "space-between" }}>
+                  <span>{t.title}</span>
+                  <div className="row">
+                    <button disabled={busy} onClick={() => addTask(t.id, { block: "morning" })}>午前</button>
+                    <button disabled={busy} onClick={() => addTask(t.id, { block: "afternoon" })}>午後</button>
+                    <button disabled={busy} onClick={() => addTask(t.id, { block: "evening" })}>夜</button>
+                    <button className="ghost" disabled={busy} onClick={() => addTask(t.id, { rocket: true })}>Rocket</button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <ul className="list" style={{ maxHeight: 260, overflow: "auto" }}>
+              {todos.map((td) => (
+                <li key={td.id} className="row" style={{ justifyContent: "space-between" }}>
+                  <span>
+                    {td.title}
+                    <span style={{ color: "#999", marginLeft: 6, fontSize: 12 }}>
+                      （{td.task_title}）
+                    </span>
+                  </span>
+                  <div className="row">
+                    <button disabled={busy} onClick={() => addTodo(td.id, { block: "morning" })}>午前</button>
+                    <button disabled={busy} onClick={() => addTodo(td.id, { block: "afternoon" })}>午後</button>
+                    <button disabled={busy} onClick={() => addTodo(td.id, { block: "evening" })}>夜</button>
+                    <button className="ghost" disabled={busy} onClick={() => addTodo(td.id, { rocket: true })}>Rocket</button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
         <div>
           <div style={{ fontWeight: 600, marginBottom: 6 }}>当日のプラン</div>

@@ -588,6 +588,37 @@ router.get("/todos", (req, res) => {
   );
 });
 
+// List todos by user across tasks
+router.get("/todos/by-user", (req, res) => {
+  const { line_user_id, done, project_id } = req.query || {};
+  if (!line_user_id)
+    return res.status(400).json({ error: "line_user_id required" });
+  const conds = ["t.line_user_id=?"]; // join alias t for tasks
+  const args = [line_user_id];
+  if (typeof done !== "undefined") {
+    conds.push("td.done=?");
+    args.push(String(done) === "true" ? 1 : 0);
+  }
+  if (typeof project_id !== "undefined") {
+    if (project_id === "none") conds.push("t.project_id IS NULL");
+    else if (String(project_id).length) {
+      conds.push("t.project_id=?");
+      args.push(project_id);
+    }
+  }
+  const where = "WHERE " + conds.join(" AND ");
+  const sql = `SELECT td.id, td.task_id, td.title, td.done, td.estimated_minutes, td.sort_order,
+                      t.title AS task_title, t.deadline, t.importance
+               FROM todos td
+               JOIN tasks t ON t.id = td.task_id
+               ${where}
+               ORDER BY CASE WHEN td.sort_order IS NULL THEN 1 ELSE 0 END, td.sort_order, td.id`;
+  db.all(sql, args, (e, rows) => {
+    if (e) return res.status(500).json({ error: "db", detail: String(e) });
+    res.json(rows || []);
+  });
+});
+
 // Update todo (title, done, sort_order)
 router.patch("/todos/:id", (req, res) => {
   const { id } = req.params;
@@ -677,7 +708,14 @@ router.get("/plans", (req, res) => {
       if (e) return res.status(500).json({ error: "db", detail: String(e) });
       if (!row) return res.json(null);
       db.all(
-        "SELECT id,task_id,order_index,planned_minutes,block,rocket FROM plan_items WHERE plan_id=? ORDER BY COALESCE(order_index, 1e9), id",
+        `SELECT pi.id, pi.task_id, pi.todo_id, pi.order_index, pi.planned_minutes, pi.block, pi.rocket,
+                COALESCE(td.title, t.title) AS title,
+                CASE WHEN pi.todo_id IS NOT NULL THEN 'todo' ELSE 'task' END AS kind
+         FROM plan_items pi
+         LEFT JOIN todos td ON td.id = pi.todo_id
+         LEFT JOIN tasks t ON t.id = pi.task_id
+         WHERE pi.plan_id=?
+         ORDER BY COALESCE(pi.order_index, 1e9), pi.id`,
         [row.id],
         (e2, items) => {
           if (e2)
@@ -716,13 +754,17 @@ router.post("/plans", (req, res) => {
 // Add item to plan
 router.post("/plans/:id/items", (req, res) => {
   const { id } = req.params;
-  const { task_id, planned_minutes, block, rocket } = req.body || {};
-  if (!task_id) return res.status(400).json({ error: "task_id required" });
+  const { task_id, todo_id, planned_minutes, block, rocket } = req.body || {};
+  if (!task_id && !todo_id)
+    return res.status(400).json({ error: "task_id or todo_id required" });
+  if (task_id && todo_id)
+    return res.status(400).json({ error: "provide only one of task_id or todo_id" });
   db.run(
-    "INSERT INTO plan_items(plan_id,task_id,planned_minutes,block,rocket) VALUES (?,?,?,?,?)",
+    "INSERT INTO plan_items(plan_id,task_id,todo_id,planned_minutes,block,rocket) VALUES (?,?,?,?,?,?)",
     [
       Number(id),
-      Number(task_id),
+      task_id ? Number(task_id) : null,
+      todo_id ? Number(todo_id) : null,
       Number.isFinite(Number(planned_minutes)) ? Number(planned_minutes) : null,
       block || null,
       rocket ? 1 : 0,

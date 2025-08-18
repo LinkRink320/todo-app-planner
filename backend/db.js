@@ -220,7 +220,8 @@ db.serialize(() => {
   db.run(`CREATE TABLE IF NOT EXISTS plan_items(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     plan_id INTEGER NOT NULL,
-    task_id INTEGER NOT NULL,
+    task_id INTEGER,
+    todo_id INTEGER,
     order_index INTEGER,
     planned_minutes INTEGER,
     block TEXT, -- 'morning' | 'afternoon' | 'evening'
@@ -233,6 +234,17 @@ db.serialize(() => {
   );
   db.run(
     "CREATE INDEX IF NOT EXISTS idx_plan_items_plan_block ON plan_items(plan_id, block)"
+  );
+  // Ensure todo_id exists for older tables
+  db.all("PRAGMA table_info('plan_items')", (err, cols) => {
+    if (err) return;
+    const names = new Set((cols || []).map((c) => c.name));
+    if (!names.has("todo_id")) {
+      db.run("ALTER TABLE plan_items ADD COLUMN todo_id INTEGER");
+    }
+  });
+  db.run(
+    "CREATE INDEX IF NOT EXISTS idx_plan_items_plan_todo ON plan_items(plan_id, todo_id)"
   );
 });
 
