@@ -6,21 +6,18 @@ import Todos from "../components/Todos.jsx";
 import Plan from "../components/Plan.jsx";
 // very light markdown to HTML (bold, italics, links, line breaks) — safe as innerText via dangerouslySetInnerHTML only after naive sanitization
 function mdToHtml(md) {
-  if (!md) return "";
-  let s = String(md);
+  if (md == null) return "";
+  let s = typeof md === "string" ? md : String(md);
   // escape basic HTML
   s = s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  // links [text](url)
-  s = s.replace(
-    /\[([^\]]+)\]\((https?:[^\)]+)\)/g,
-    '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>'
-  );
-  // bold **text**
-  s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-  // italics *text*
-  s = s.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+  // links [text](url) (simple)
+  s = s.replace(/\[([^\]]+?)\]\((https?:[^\)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  // bold **text** (not greedy)
+  s = s.replace(/\*\*([^*]+?)\*\*/g, "<strong>$1</strong>");
+  // italics *text* (basic)
+  s = s.replace(/(^|\s)\*([^*]+?)\*(?=\s|$)/g, (m, p0, p1) => `${p0}<em>${p1}</em>`);
   // line breaks
-  s = s.replace(/\n/g, "<br/>");
+  s = s.replace(/\r?\n/g, "<br/>");
   return s;
 }
 
