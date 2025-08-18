@@ -11,11 +11,17 @@ function mdToHtml(md) {
   // escape basic HTML
   s = s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   // links [text](url) (simple)
-  s = s.replace(/\[([^\]]+?)\]\((https?:[^\)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  s = s.replace(
+    /\[([^\]]+?)\]\((https?:[^\)\s]+)\)/g,
+    '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>'
+  );
   // bold **text** (not greedy)
   s = s.replace(/\*\*([^*]+?)\*\*/g, "<strong>$1</strong>");
   // italics *text* (basic)
-  s = s.replace(/(^|\s)\*([^*]+?)\*(?=\s|$)/g, (m, p0, p1) => `${p0}<em>${p1}</em>`);
+  s = s.replace(
+    /(^|\s)\*([^*]+?)\*(?=\s|$)/g,
+    (m, p0, p1) => `${p0}<em>${p1}</em>`
+  );
   // line breaks
   s = s.replace(/\r?\n/g, "<br/>");
   return s;
@@ -659,26 +665,6 @@ export default function App() {
               onChange={(e) => setTimportance(e.target.value)}
             >
               <option value="">重要度(任意)</option>
-              {(t.url || t.details_md) && (
-                <div style={{ marginTop: 6 }}>
-                  {t.url && (
-                    <div>
-                      <a href={t.url} target="_blank" rel="noopener noreferrer">
-                        🔗 {t.url}
-                      </a>
-                    </div>
-                  )}
-                  {t.details_md && (
-                    <div
-                      className="markdown"
-                      style={{ color: "#444", fontSize: 14, marginTop: 4 }}
-                      dangerouslySetInnerHTML={{
-                        __html: mdToHtml(t.details_md),
-                      }}
-                    />
-                  )}
-                </div>
-              )}
               <option value="high">高</option>
               <option value="medium">中</option>
               <option value="low">低</option>
@@ -962,7 +948,9 @@ export default function App() {
                                     typeof t.todos_total === "number" &&
                                     t.todos_total > 0
                                   )
-                                    parts.push(`✓ ${t.todos_done || 0}/${t.todos_total}`);
+                                    parts.push(
+                                      `✓ ${t.todos_done || 0}/${t.todos_total}`
+                                    );
                                   if (
                                     t.type === "long" &&
                                     typeof t.progress === "number"

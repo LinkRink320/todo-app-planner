@@ -182,13 +182,22 @@ cron.schedule(MORNING_SUMMARY_CRON, async () => {
       if (todays.length)
         lines.push(
           `今日の期限 (${todays.length}):\n` +
-            todays.map((t) => `・${t.title} (${t.deadline.slice(11, 16)})`).join("\n")
+            todays
+              .map((t) => `・${t.title} (${t.deadline.slice(11, 16)})`)
+              .join("\n")
         );
       if (softs.length)
         lines.push(
           `内締切 (${softs.length}):\n` +
             softs
-              .map((t) => `・${t.title}${t.soft_deadline?.slice(10) ? ` (${t.soft_deadline.slice(11, 16)})` : ""}`)
+              .map(
+                (t) =>
+                  `・${t.title}${
+                    t.soft_deadline?.slice(10)
+                      ? ` (${t.soft_deadline.slice(11, 16)})`
+                      : ""
+                  }`
+              )
               .join("\n")
         );
       if (overdue.length)

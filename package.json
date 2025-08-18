@@ -7,6 +7,7 @@
     "dev": "nodemon backend/server.js",
     "start": "node backend/server.js",
     "tunnel": "ngrok http 3000",
+  "build": "npm run web:build",
     "web:dev": "npm --prefix frontend run dev",
     "web:build": "npm --prefix frontend run build",
     "web:preview": "npm --prefix frontend run preview",

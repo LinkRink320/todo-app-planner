@@ -42,16 +42,16 @@ export default function Todos({ taskId, getHeaders, onChanged }) {
       body: JSON.stringify({
         task_id: taskId,
         title,
-    estimated_minutes: newEst ? Number(newEst) : null,
-    url: newUrl || null,
-    details_md: newDetails || null,
+        estimated_minutes: newEst ? Number(newEst) : null,
+        url: newUrl || null,
+        details_md: newDetails || null,
       }),
     });
     if (!r.ok) return;
     setNewTitle("");
     setNewEst("");
-  setNewUrl("");
-  setNewDetails("");
+    setNewUrl("");
+    setNewDetails("");
     await load();
     onChanged && onChanged();
   }
@@ -241,7 +241,10 @@ export default function Todos({ taskId, getHeaders, onChanged }) {
                     </div>
                     <div style={{ display: "flex", gap: 8 }}>
                       <button onClick={() => saveEdit(td.id)}>保存</button>
-                      <button className="ghost" onClick={() => setEditingId(null)}>
+                      <button
+                        className="ghost"
+                        onClick={() => setEditingId(null)}
+                      >
                         キャンセル
                       </button>
                     </div>
@@ -249,7 +252,11 @@ export default function Todos({ taskId, getHeaders, onChanged }) {
                 )}
               </div>
               {editingId === td.id ? null : (
-                <button className="ghost" onClick={() => startEdit(td)} title="編集">
+                <button
+                  className="ghost"
+                  onClick={() => startEdit(td)}
+                  title="編集"
+                >
                   ✎
                 </button>
               )}

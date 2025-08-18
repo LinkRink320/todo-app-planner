@@ -125,12 +125,23 @@ router.post("/webhook", middleware(line), async (req, res) => {
           if (action === "delete-task") {
             const id = Number(params.get("id"));
             if (id) {
-              db.run("DELETE FROM tasks WHERE id=? AND line_user_id=?", [id, u]);
-              return replyTextWithQuick(client, e.replyToken, `削除しました: ${id}`);
+              db.run("DELETE FROM tasks WHERE id=? AND line_user_id=?", [
+                id,
+                u,
+              ]);
+              return replyTextWithQuick(
+                client,
+                e.replyToken,
+                `削除しました: ${id}`
+              );
             }
           }
           if (action === "cancel") {
-            return replyTextWithQuick(client, e.replyToken, "キャンセルしました。");
+            return replyTextWithQuick(
+              client,
+              e.replyToken,
+              "キャンセルしました。"
+            );
           }
           if (action === "done") {
             const id = Number(params.get("id"));
