@@ -932,42 +932,47 @@ export default function App() {
                             <>
                               <div>{t.title}</div>
                               <div style={{ color: "#777", fontSize: 12 }}>
-                                {t.deadline || "-"} ・ {t.status}
-                                {typeof t.estimated_minutes === "number"
-                                  ? ` ・ 目安:${t.estimated_minutes}分`
-                                  : ""}
-                                {t.url ? " ・ 🔗" : ""}
-                                {t.urgency
-                                  ? ` ・ 緊急度:${
-                                      t.urgency === "high"
-                                        ? "高"
-                                        : t.urgency === "medium"
-                                        ? "中"
-                                        : "低"
-                                    }`
-                                  : ""}
-                                {t.soft_deadline
-                                  ? ` ・ 内締切:${t.soft_deadline}`
-                                  : ""}
-                                {t.importance
-                                  ? ` ・ 重要度:${
-                                      t.importance === "high"
-                                        ? "高"
-                                        : t.importance === "medium"
-                                        ? "中"
-                                        : "低"
-                                    }`
-                                  : ""}
-                                {typeof t.todos_total === "number" &&
-                                t.todos_total > 0
-                                  ? ` ・ ✓ ${t.todos_done || 0}/${
-                                      t.todos_total
-                                    }`
-                                  : ""}
-                                {t.type === "long" &&
-                                typeof t.progress === "number"
-                                  ? ` ・ 進捗 ${t.progress}%`
-                                  : ""}
+                                {(() => {
+                                  const parts = [];
+                                  parts.push(t.deadline || "-");
+                                  parts.push(t.status);
+                                  if (typeof t.estimated_minutes === "number")
+                                    parts.push(`目安:${t.estimated_minutes}分`);
+                                  if (t.url) parts.push("🔗");
+                                  if (t.urgency)
+                                    parts.push(
+                                      `緊急度:${
+                                        t.urgency === "high"
+                                          ? "高"
+                                          : t.urgency === "medium"
+                                          ? "中"
+                                          : "低"
+                                      }`
+                                    );
+                                  if (t.soft_deadline)
+                                    parts.push(`内締切:${t.soft_deadline}`);
+                                  if (t.importance)
+                                    parts.push(
+                                      `重要度:${
+                                        t.importance === "high"
+                                          ? "高"
+                                          : t.importance === "medium"
+                                          ? "中"
+                                          : "低"
+                                      }`
+                                    );
+                                  if (
+                                    typeof t.todos_total === "number" &&
+                                    t.todos_total > 0
+                                  )
+                                    parts.push(`✓ ${t.todos_done || 0}/${t.todos_total}`);
+                                  if (
+                                    t.type === "long" &&
+                                    typeof t.progress === "number"
+                                  )
+                                    parts.push(`進捗 ${t.progress}%`);
+                                  return parts.join(" ・ ");
+                                })()}
                               </div>
                             </>
                           )}
