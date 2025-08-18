@@ -233,3 +233,24 @@ button.ghost {
     grid-template-columns: 1fr;
   }
 }
+
+/* Calendar */
+.calendar { margin-top: 12px; }
+.calendar-head { display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:8px; }
+.calendar-title { font-weight:700; }
+.calendar-grid { display:grid; grid-template-columns: repeat(7, 1fr); gap:6px; }
+.calendar-dow { text-align:center; color: var(--muted); font-size:12px; }
+.calendar-cell { background:#fff; border:1px solid var(--border); border-radius:10px; min-height:100px; padding:6px; display:flex; flex-direction:column; }
+.calendar-cell.out { opacity:0.5; }
+.calendar-date { color:#999; font-size:12px; margin-bottom:4px; }
+.calendar-cell-body { display:flex; flex-direction:column; gap:4px; }
+.calendar-undated { margin-bottom:8px; }
+.calendar-undated-title { color: var(--muted); font-size:12px; margin-bottom:4px; }
+.calendar-undated-list { display:flex; gap:6px; flex-wrap:wrap; }
+
+.pill { display:inline-flex; align-items:center; gap:6px; padding:4px 6px; border-radius:12px; border:1px solid var(--border); background:#fafafa; cursor:grab; }
+.pill-dot { width:8px; height:8px; border-radius:50%; background:#bbb; }
+.pill-text { font-size:12px; }
+.pill-done .pill-dot { background:#52c41a; }
+.pill-pending .pill-dot { background:#1677ff; }
+.pill-failed .pill-dot { background:#faad14; }

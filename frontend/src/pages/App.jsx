@@ -1,5 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Board from "../components/Board.jsx";
+import Calendar from "../components/Calendar.jsx";
+import Week from "../components/Week.jsx";
+import Todos from "../components/Todos.jsx";
 
 function getSession(k) {
   try {
@@ -21,12 +24,13 @@ export default function App() {
   const [pid, setPid] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [status, setStatus] = useState(getSession("TASK_STATUS") || "all");
-  const [view, setView] = useState(getSession("VIEW_MODE") || "list"); // list | board
+  const [view, setView] = useState(getSession("VIEW_MODE") || "list"); // list | board | calendar | week
   const [pname, setPname] = useState("");
   const [ttitle, setTtitle] = useState("");
   const [tdeadline, setTdeadline] = useState("");
   const [timportance, setTimportance] = useState("");
   const [trepeat, setTrepeat] = useState("");
+  const [testimated, setTestimated] = useState("");
   const [q, setQ] = useState("");
   const [fImportance, setFImportance] = useState("");
   const [views, setViews] = useState([]);
@@ -36,10 +40,12 @@ export default function App() {
   const [err, setErr] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [openTodos, setOpenTodos] = useState(() => new Set());
   const [editVals, setEditVals] = useState({
     title: "",
     deadline: "",
     importance: "",
+  estimated_minutes: "",
   });
 
   const isMobile = useMemo(() => {
@@ -172,12 +178,14 @@ export default function App() {
       // no filter
     } else if (pid === "none") qs.set("project_id", "none");
     else if (pid) qs.set("project_id", String(pid));
-  // In board view, fetch all statuses to populate columns
-  if (view === "board") qs.set("status", "all");
-  else if (status) qs.set("status", status);
+    // In board/calendar view, fetch all statuses to populate columns/cells
+    if (view !== "list") qs.set("status", "all");
+    else if (status) qs.set("status", status);
   if (q) qs.set("q", q);
   if (fImportance) qs.set("importance", fImportance);
-    const r = await fetch(`/api/tasks?${qs.toString()}`, {
+  // include todo counts for list view (cheap aggregate)
+  if (view === "list") qs.set("with_todo_counts", "true");
+  const r = await fetch(`/api/tasks?${qs.toString()}`, {
       headers: await h(),
     });
     if (!r.ok) return showErr(`tasks ${r.status}`);
@@ -196,6 +204,7 @@ export default function App() {
       project_id: typeof pid === "number" ? pid : null,
   importance: timportance || null,
   repeat: trepeat || null,
+  estimated_minutes: testimated ? Number(testimated) : null,
     };
     const r = await fetch("/api/tasks", {
       method: "POST",
@@ -204,7 +213,8 @@ export default function App() {
     });
     if (!r.ok) return showErr(`create task ${r.status}`);
     setTtitle("");
-    setTimportance("");
+  setTimportance("");
+  setTestimated("");
     loadTasks();
     showMsg("タスクを追加しました");
   }
@@ -223,6 +233,7 @@ export default function App() {
       title: t.title,
       deadline: t.deadline ? t.deadline.replace(" ", "T") : "",
   importance: t.importance || "",
+  estimated_minutes: t.estimated_minutes || "",
     });
     if (view === "board") setView("list");
   }
@@ -235,6 +246,7 @@ export default function App() {
       title: editVals.title,
       deadline: editVals.deadline ? editVals.deadline.replace("T", " ") : null,
       importance: editVals.importance || null,
+  estimated_minutes: editVals.estimated_minutes ? Number(editVals.estimated_minutes) : null,
     };
     const r = await fetch(`/api/tasks/${id}`, {
       method: "PATCH",
@@ -353,11 +365,23 @@ export default function App() {
                 >
                   ボード
                 </button>
+                <button
+                  className={view === "calendar" ? "ghost" : ""}
+                  onClick={() => setView("calendar")}
+                >
+                  カレンダー
+                </button>
+                <button
+                  className={view === "week" ? "ghost" : ""}
+                  onClick={() => setView("week")}
+                >
+                  週
+                </button>
               </div>
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value)}
-                disabled={view === "board"}
+                disabled={view !== "list"}
               >
                 <option value="pending">未完了</option>
                 <option value="all">すべて</option>
@@ -379,6 +403,16 @@ export default function App() {
               value={tdeadline}
               onChange={(e) => setTdeadline(e.target.value)}
             />
+          </div>
+          <div className="grid-2" style={{ marginTop: 8 }}>
+            <input
+              type="number"
+              min="0"
+              placeholder="所要時間(分) 任意"
+              value={testimated}
+              onChange={(e) => setTestimated(e.target.value)}
+            />
+            <span />
           </div>
           <div className="grid-2" style={{ marginTop: 8 }}>
             <select
@@ -443,6 +477,7 @@ export default function App() {
             </div>
           )}
           {view === "list" ? (
+            <>
             <ul className="list" style={{ marginTop: 12 }}>
               {tasks.length === 0 ? (
                 <li style={{ color: "#777", padding: "8px 0" }}>
@@ -514,12 +549,28 @@ export default function App() {
                               <option value="low">低</option>
                             </select>
                           </div>
+                          <div className="grid-2" style={{ marginBottom: 6 }}>
+                            <input
+                              type="number"
+                              min="0"
+                              placeholder="所要時間(分) 任意"
+                              value={editVals.estimated_minutes}
+                              onChange={(e) =>
+                                setEditVals({
+                                  ...editVals,
+                                  estimated_minutes: e.target.value,
+                                })
+                              }
+                            />
+                            <span />
+                          </div>
                         </>
                       ) : (
                         <>
                           <div>{t.title}</div>
                           <div style={{ color: "#777", fontSize: 12 }}>
                             {t.deadline || "-"} ・ {t.status}
+                            {typeof t.estimated_minutes === "number" ? ` ・ 目安:${t.estimated_minutes}分` : ""}
                             {t.urgency
                               ? ` ・ 緊急度:${
                                   t.urgency === "high"
@@ -537,6 +588,9 @@ export default function App() {
                                     ? "中"
                                     : "低"
                                 }`
+                              : ""}
+                            {typeof t.todos_total === "number" && t.todos_total > 0
+                              ? ` ・ ✓ ${t.todos_done || 0}/${t.todos_total}`
                               : ""}
                             {t.type === "long" && typeof t.progress === "number"
                               ? ` ・ 進捗 ${t.progress}%`
@@ -558,13 +612,36 @@ export default function App() {
                         <button onClick={() => updateTask(t.id, "done")}>
                           完了
                         </button>
+                        <button
+                          className="ghost"
+                          onClick={() => {
+                            const next = new Set(openTodos);
+                            if (next.has(t.id)) next.delete(t.id);
+                            else next.add(t.id);
+                            setOpenTodos(next);
+                          }}
+                        >
+                          Todos
+                        </button>
                       </div>
                     )}
                   </li>
                 ))
               )}
             </ul>
-          ) : (
+            {tasks.map((t) => (
+              openTodos.has(t.id) ? (
+                <div key={`todos-${t.id}`} style={{ marginLeft: 32 }}>
+                  <Todos
+                    taskId={t.id}
+                    getHeaders={h}
+                    onChanged={loadTasks}
+                  />
+                </div>
+              ) : null
+            ))}
+            </>
+          ) : view === "board" ? (
             <Board
               tasksByStatus={{
                 pending: tasks.filter((t) => t.status === "pending"),
@@ -581,6 +658,63 @@ export default function App() {
                   body: JSON.stringify({ line_user_id: uid, status, orderedIds }),
                 });
                 loadTasks();
+              }}
+            />
+          ) : view === "calendar" ? (
+            <Calendar
+              tasks={tasks}
+              onDropDate={async (taskId, dateStr) => {
+                try {
+                  const t = tasks.find((x) => x.id === taskId);
+                  if (!t) return;
+                  let deadline = null;
+                  if (dateStr) {
+                    // preserve original time when available, else default 09:00
+                    let hhmm = "09:00";
+                    if (t.deadline) {
+                      const m = t.deadline.match(/\d{2}:\d{2}$/);
+                      if (m) hhmm = m[0];
+                    }
+                    deadline = `${dateStr} ${hhmm}`;
+                  }
+                  const r = await fetch(`/api/tasks/${taskId}`, {
+                    method: "PATCH",
+                    headers: await h(),
+                    body: JSON.stringify({ deadline }),
+                  });
+                  if (!r.ok) return showErr(`update task ${r.status}`);
+                  loadTasks();
+                } catch (e) {
+                  showErr(e);
+                }
+              }}
+            />
+          ) : (
+            <Week
+              tasks={tasks}
+              onDropDate={async (taskId, dateStr) => {
+                try {
+                  const t = tasks.find((x) => x.id === taskId);
+                  if (!t) return;
+                  let deadline = null;
+                  if (dateStr) {
+                    let hhmm = "09:00";
+                    if (t.deadline) {
+                      const m = t.deadline.match(/\d{2}:\d{2}$/);
+                      if (m) hhmm = m[0];
+                    }
+                    deadline = `${dateStr} ${hhmm}`;
+                  }
+                  const r = await fetch(`/api/tasks/${taskId}`, {
+                    method: "PATCH",
+                    headers: await h(),
+                    body: JSON.stringify({ deadline }),
+                  });
+                  if (!r.ok) return showErr(`update task ${r.status}`);
+                  loadTasks();
+                } catch (e) {
+                  showErr(e);
+                }
               }}
             />
           )}

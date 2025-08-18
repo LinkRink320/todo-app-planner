@@ -6,6 +6,20 @@ const { env, line } = require("../config");
 const router = express.Router();
 const client = new Client(line);
 
+// Ensure saved_views.view_order column exists to avoid race with startup migrations
+function ensureViewOrderColumn(cb) {
+  try {
+    db.all("PRAGMA table_info('saved_views')", (err, cols) => {
+      if (err) return cb && cb();
+      const names = new Set((cols || []).map((c) => c.name));
+      if (names.has("view_order")) return cb && cb();
+      db.run("ALTER TABLE saved_views ADD COLUMN view_order INTEGER", () => cb && cb());
+    });
+  } catch {
+    cb && cb();
+  }
+}
+
 router.use((req, res, next) => {
   const k = req.headers["x-api-key"];
   if (!env.API_KEY) return res.status(403).json({ error: "API disabled" });
@@ -103,6 +117,7 @@ router.get("/tasks", (req, res) => {
     importance,
     deadline_from,
     deadline_to,
+  with_todo_counts,
   } = req.query;
   if (!line_user_id)
     return res.status(400).json({ error: "line_user_id required" });
@@ -139,13 +154,13 @@ router.get("/tasks", (req, res) => {
   const where = "WHERE " + conds.join(" AND ");
   const lim = Math.min(Math.max(parseInt(limit || 200, 10) || 200, 1), 1000);
   db.all(
-    `SELECT id,title,deadline,status,project_id,type,progress,importance,sort_order,repeat FROM tasks ${where} ORDER BY CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END, sort_order ASC, CASE WHEN deadline IS NULL THEN 1 ELSE 0 END, deadline ASC LIMIT ?`,
+    `SELECT id,title,deadline,status,project_id,type,progress,importance,sort_order,repeat,estimated_minutes FROM tasks ${where} ORDER BY CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END, sort_order ASC, CASE WHEN deadline IS NULL THEN 1 ELSE 0 END, deadline ASC LIMIT ?`,
     [...args, lim],
     (e, rows) => {
       if (e) return res.status(500).json({ error: "db", detail: String(e) });
       const now = Date.now();
       const dayMs = 24 * 60 * 60 * 1000;
-      const withUrgency = (rows || []).map((r) => {
+      let list = (rows || []).map((r) => {
         let urgency = "low"; // default
         if (r.deadline) {
           const t = Date.parse(r.deadline.replace(" ", "T"));
@@ -160,13 +175,31 @@ router.get("/tasks", (req, res) => {
         }
         return { ...r, urgency };
       });
-      res.json(withUrgency);
+      const needsCounts = String(with_todo_counts || "").toLowerCase() === "true";
+      if (!needsCounts || list.length === 0) return res.json(list);
+      const ids = list.map((x) => x.id);
+      const ph = ids.map(() => "?").join(",");
+      db.all(
+        `SELECT task_id, SUM(CASE WHEN done=1 THEN 1 ELSE 0 END) AS done_count, COUNT(*) AS total_count FROM todos WHERE task_id IN (${ph}) GROUP BY task_id`,
+        ids,
+        (e2, counts) => {
+          if (!e2 && Array.isArray(counts)) {
+            const map = new Map(counts.map((c) => [c.task_id, c]));
+            list = list.map((t) => ({
+              ...t,
+              todos_done: map.get(t.id)?.done_count || 0,
+              todos_total: map.get(t.id)?.total_count || 0,
+            }));
+          }
+          res.json(list);
+        }
+      );
     }
   );
 });
 
 router.post("/tasks", (req, res) => {
-  const { line_user_id, title, deadline, project_id, importance, repeat } =
+  const { line_user_id, title, deadline, project_id, importance, repeat, estimated_minutes } =
     req.body || {};
   if (!line_user_id || !title)
     return res.status(400).json({ error: "line_user_id and title required" });
@@ -177,9 +210,10 @@ router.post("/tasks", (req, res) => {
     else return res.status(400).json({ error: "invalid importance" });
   }
   const rep = repeat ? String(repeat) : null;
+  const est = Number.isFinite(Number(estimated_minutes)) ? Number(estimated_minutes) : null;
   db.run(
-    "INSERT INTO tasks(line_user_id,title,deadline,project_id,importance,repeat) VALUES (?,?,?,?,?,?)",
-    [line_user_id, title, deadline || null, project_id || null, imp, rep],
+    "INSERT INTO tasks(line_user_id,title,deadline,project_id,importance,repeat,estimated_minutes) VALUES (?,?,?,?,?,?,?)",
+    [line_user_id, title, deadline || null, project_id || null, imp, rep, est],
     function (err) {
       if (err)
         return res.status(500).json({ error: "db", detail: String(err) });
@@ -190,7 +224,7 @@ router.post("/tasks", (req, res) => {
 
 router.patch("/tasks/:id", (req, res) => {
   const { id } = req.params;
-  const { title, deadline, project_id, importance, status, repeat, sort_order } = req.body || {};
+  const { title, deadline, project_id, importance, status, repeat, sort_order, estimated_minutes } = req.body || {};
 
   const sets = [];
   const args = [];
@@ -236,6 +270,11 @@ router.patch("/tasks/:id", (req, res) => {
     sets.push("sort_order=?");
     args.push(so);
   }
+  if (typeof estimated_minutes !== "undefined") {
+    const est = Number.isFinite(Number(estimated_minutes)) ? Number(estimated_minutes) : null;
+    sets.push("estimated_minutes=?");
+    args.push(est);
+  }
   if (typeof status !== "undefined") {
     const s = String(status);
     if (!["pending", "done", "failed"].includes(s))
@@ -257,7 +296,7 @@ router.patch("/tasks/:id", (req, res) => {
     // If marked done and task has repeat and deadline, create next occurrence
     if (updated && typeof status !== "undefined" && String(status) === "done") {
       db.get(
-        "SELECT line_user_id,title,deadline,project_id,importance,repeat FROM tasks WHERE id=?",
+        "SELECT line_user_id,title,deadline,project_id,importance,repeat,estimated_minutes FROM tasks WHERE id=?",
         [id],
         (gErr, row) => {
           if (gErr || !row) return res.json({ updated });
@@ -266,7 +305,7 @@ router.patch("/tasks/:id", (req, res) => {
           const next = calcNextDeadline(row.deadline, rep);
           if (!next) return res.json({ updated });
           db.run(
-            "INSERT INTO tasks(line_user_id,title,deadline,project_id,importance,repeat) VALUES (?,?,?,?,?,?)",
+            "INSERT INTO tasks(line_user_id,title,deadline,project_id,importance,repeat,estimated_minutes) VALUES (?,?,?,?,?,?,?)",
             [
               row.line_user_id,
               row.title,
@@ -274,6 +313,7 @@ router.patch("/tasks/:id", (req, res) => {
               row.project_id || null,
               row.importance || null,
               rep,
+              row.estimated_minutes || null,
             ],
             () => res.json({ updated, repeated: true })
           );
@@ -358,14 +398,16 @@ router.get("/line-profile", async (req, res) => {
 router.get("/views", (req, res) => {
   const { line_user_id } = req.query;
   if (!line_user_id) return res.status(400).json({ error: "line_user_id required" });
-  db.all(
-    "SELECT id,name,payload,view_order,created_at,updated_at FROM saved_views WHERE line_user_id=? ORDER BY COALESCE(view_order, 1e9), id DESC",
-    [line_user_id],
-    (e, rows) => {
-      if (e) return res.status(500).json({ error: "db", detail: String(e) });
-      res.json((rows || []).map((r) => ({ ...r, payload: safeParse(r.payload) })));
-    }
-  );
+  ensureViewOrderColumn(() => {
+    db.all(
+      "SELECT id,name,payload,view_order,created_at,updated_at FROM saved_views WHERE line_user_id=? ORDER BY COALESCE(view_order, 1e9), id DESC",
+      [line_user_id],
+      (e, rows) => {
+        if (e) return res.status(500).json({ error: "db", detail: String(e) });
+        res.json((rows || []).map((r) => ({ ...r, payload: safeParse(r.payload) })));
+      }
+    );
+  });
 });
 
 router.post("/views", (req, res) => {
@@ -415,17 +457,19 @@ router.delete("/views/:id", (req, res) => {
 router.post("/views/reorder", (req, res) => {
   const { line_user_id, orderedIds } = req.body || {};
   if (!line_user_id || !Array.isArray(orderedIds)) return res.status(400).json({ error: "line_user_id and orderedIds required" });
-  const stmt = db.prepare("UPDATE saved_views SET view_order=? WHERE id=? AND line_user_id=?");
-  db.run("BEGIN");
-  orderedIds.forEach((id, idx) => stmt.run([idx + 1, id, line_user_id]));
-  stmt.finalize((e) => {
-    if (e) {
-      try { db.run("ROLLBACK"); } catch {}
-      return res.status(500).json({ error: "db", detail: String(e) });
-    }
-    db.run("COMMIT", (e2) => {
-      if (e2) return res.status(500).json({ error: "db", detail: String(e2) });
-      res.json({ updated: orderedIds.length });
+  ensureViewOrderColumn(() => {
+    const stmt = db.prepare("UPDATE saved_views SET view_order=? WHERE id=? AND line_user_id=?");
+    db.run("BEGIN");
+    orderedIds.forEach((id, idx) => stmt.run([idx + 1, id, line_user_id]));
+    stmt.finalize((e) => {
+      if (e) {
+        try { db.run("ROLLBACK"); } catch {}
+        return res.status(500).json({ error: "db", detail: String(e) });
+      }
+      db.run("COMMIT", (e2) => {
+        if (e2) return res.status(500).json({ error: "db", detail: String(e2) });
+        res.json({ updated: orderedIds.length });
+      });
     });
   });
 });
@@ -435,3 +479,94 @@ function safeParse(s) {
 }
 
 module.exports = router;
+
+// --- Todos (subtasks) API ---
+// Create todo
+router.post("/todos", (req, res) => {
+  const { task_id, title, estimated_minutes } = req.body || {};
+  if (!task_id || !title) return res.status(400).json({ error: "task_id and title required" });
+  db.run(
+    "INSERT INTO todos(task_id,title,estimated_minutes) VALUES(?,?,?)",
+    [Number(task_id), String(title), Number.isFinite(Number(estimated_minutes)) ? Number(estimated_minutes) : null],
+    function (err) {
+      if (err) return res.status(500).json({ error: "db", detail: String(err) });
+      res.json({ id: this?.lastID });
+    }
+  );
+});
+
+// List todos for a task
+router.get("/todos", (req, res) => {
+  const { task_id } = req.query || {};
+  if (!task_id) return res.status(400).json({ error: "task_id required" });
+  db.all(
+  "SELECT id,task_id,title,done,estimated_minutes,sort_order,created_at,updated_at FROM todos WHERE task_id=? ORDER BY CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END, sort_order, id",
+    [Number(task_id)],
+    (e, rows) => {
+      if (e) return res.status(500).json({ error: "db", detail: String(e) });
+      res.json(rows || []);
+    }
+  );
+});
+
+// Update todo (title, done, sort_order)
+router.patch("/todos/:id", (req, res) => {
+  const { id } = req.params;
+  const { title, done, sort_order, estimated_minutes } = req.body || {};
+  const sets = [];
+  const args = [];
+  if (typeof title !== "undefined") {
+    if (!String(title).trim()) return res.status(400).json({ error: "title cannot be empty" });
+    sets.push("title=?");
+    args.push(String(title));
+  }
+  if (typeof done !== "undefined") {
+    sets.push("done=?");
+    args.push(Number(done ? 1 : 0));
+  }
+  if (typeof sort_order !== "undefined") {
+    const so = Number.isFinite(Number(sort_order)) ? Number(sort_order) : null;
+    sets.push("sort_order=?");
+    args.push(so);
+  }
+  if (typeof estimated_minutes !== "undefined") {
+    const est = Number.isFinite(Number(estimated_minutes)) ? Number(estimated_minutes) : null;
+    sets.push("estimated_minutes=?");
+    args.push(est);
+  }
+  if (!sets.length) return res.status(400).json({ error: "no fields to update" });
+  const sql = `UPDATE todos SET ${sets.join(", ")}, updated_at=datetime('now','localtime') WHERE id=?`;
+  db.run(sql, [...args, id], function (err) {
+    if (err) return res.status(500).json({ error: "db", detail: String(err) });
+    res.json({ updated: this?.changes || 0 });
+  });
+});
+
+// Delete todo
+router.delete("/todos/:id", (req, res) => {
+  const { id } = req.params;
+  db.run("DELETE FROM todos WHERE id=?", [id], function (err) {
+    if (err) return res.status(500).json({ error: "db", detail: String(err) });
+    res.json({ deleted: this?.changes || 0 });
+  });
+});
+
+// Reorder todos within a task
+router.post("/todos/reorder", (req, res) => {
+  const { task_id, orderedIds } = req.body || {};
+  if (!task_id || !Array.isArray(orderedIds)) return res.status(400).json({ error: "task_id and orderedIds required" });
+  const updates = orderedIds.map((id, idx) => ({ id: Number(id), so: idx + 1 }));
+  const stmt = db.prepare("UPDATE todos SET sort_order=? WHERE id=? AND task_id=?");
+  db.run("BEGIN");
+  for (const u of updates) stmt.run([u.so, u.id, Number(task_id)]);
+  stmt.finalize((e) => {
+    if (e) {
+      try { db.run("ROLLBACK"); } catch {}
+      return res.status(500).json({ error: "db", detail: String(e) });
+    }
+    db.run("COMMIT", (e2) => {
+      if (e2) return res.status(500).json({ error: "db", detail: String(e2) });
+      res.json({ updated: updates.length });
+    });
+  });
+});

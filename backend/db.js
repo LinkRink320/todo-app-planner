@@ -51,6 +51,8 @@ db.serialize(() => {
       alters.push("ALTER TABLE tasks ADD COLUMN sort_order INTEGER");
     if (!names.has("repeat"))
       alters.push("ALTER TABLE tasks ADD COLUMN repeat TEXT");
+    if (!names.has("estimated_minutes"))
+      alters.push("ALTER TABLE tasks ADD COLUMN estimated_minutes INTEGER");
 
     // If deadline column is NOT NULL, migrate to allow NULL (optional deadline)
     const deadlineCol = (cols || []).find((c) => c.name === "deadline");
@@ -129,6 +131,29 @@ db.serialize(() => {
     "CREATE INDEX IF NOT EXISTS idx_projects_user ON projects(line_user_id)"
   );
 
+  // Sub-tasks (Todos) under tasks
+  db.run(`CREATE TABLE IF NOT EXISTS todos(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    done INTEGER NOT NULL DEFAULT 0,
+    estimated_minutes INTEGER,
+    sort_order INTEGER,
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    updated_at TEXT
+  )`);
+  // Ensure estimated_minutes exists on todos even if created earlier
+  db.all("PRAGMA table_info('todos')", (err, cols) => {
+    if (err) return;
+    const names = new Set((cols || []).map((c) => c.name));
+    if (!names.has("estimated_minutes")) {
+      db.run("ALTER TABLE todos ADD COLUMN estimated_minutes INTEGER");
+    }
+  });
+  db.run("CREATE INDEX IF NOT EXISTS idx_todos_task ON todos(task_id)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_todos_task_done ON todos(task_id, done)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_todos_task_sort ON todos(task_id, sort_order)");
+
   // Saved composite views (filters/layout presets)
   db.run(`CREATE TABLE IF NOT EXISTS saved_views(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -139,12 +164,27 @@ db.serialize(() => {
     created_at TEXT DEFAULT (datetime('now','localtime')),
     updated_at TEXT
   )`);
-  db.run(
-    "CREATE INDEX IF NOT EXISTS idx_views_user_name ON saved_views(line_user_id, name)"
-  );
-  db.run(
-    "CREATE INDEX IF NOT EXISTS idx_views_user_order ON saved_views(line_user_id, view_order)"
-  );
+  // Ensure view_order exists even if table was created previously without it
+  db.all("PRAGMA table_info('saved_views')", (err, cols) => {
+    if (err) return; // skip indexes if pragma fails
+    const names = new Set((cols || []).map((c) => c.name));
+    const runIndexes = () => {
+      db.run(
+        "CREATE INDEX IF NOT EXISTS idx_views_user_name ON saved_views(line_user_id, name)"
+      );
+      db.run(
+        "CREATE INDEX IF NOT EXISTS idx_views_user_order ON saved_views(line_user_id, view_order)"
+      );
+    };
+    if (!names.has("view_order")) {
+      db.run("ALTER TABLE saved_views ADD COLUMN view_order INTEGER", (e) => {
+        if (e) return; // cannot add, skip indexes that use it
+        runIndexes();
+      });
+    } else {
+      runIndexes();
+    }
+  });
 
   db.run(`CREATE TABLE IF NOT EXISTS logs(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
