@@ -143,6 +143,19 @@ export default function App() {
     loadViews();
     showMsg("ビューを保存しました");
   }
+  async function deleteView(id) {
+    const r = await fetch(`/api/views/${id}`, { method: "DELETE", headers: await h() });
+    if (!r.ok) return showErr(`delete view ${r.status}`);
+    loadViews();
+  }
+  async function reorderViews(newOrder) {
+    await fetch(`/api/views/reorder`, {
+      method: "POST",
+      headers: await h(),
+      body: JSON.stringify({ line_user_id: uid, orderedIds: newOrder }),
+    });
+    loadViews();
+  }
   function applyViewPayload(p) {
     if (!p) return;
     if (typeof p.pid !== "undefined") setPid(p.pid);
@@ -403,12 +416,30 @@ export default function App() {
             <button onClick={saveCurrentView}>保存</button>
           </div>
           {views.length > 0 && (
-            <div className="row stack-sm" style={{ marginTop: 8, flexWrap: 'wrap' }}>
-              {views.map((v) => (
-                <button key={v.id} className="ghost" onClick={() => applyViewPayload(v.payload)}>
-                  {v.name}
-                </button>
-              ))}
+            <div className="panel" style={{ marginTop: 8 }}>
+              <div style={{ fontWeight: 600, marginBottom: 6 }}>保存ビュー</div>
+              <div className="row" style={{ flexWrap: 'wrap' }}>
+                {views.map((v, idx) => (
+                  <div key={v.id} className="row" style={{ gap: 4 }}>
+                    <button className="ghost" onClick={() => applyViewPayload(v.payload)}>{v.name}</button>
+                    <button className="ghost" onClick={() => deleteView(v.id)} title="削除">×</button>
+                    {idx > 0 && (
+                      <button className="ghost" title="↑" onClick={() => {
+                        const ids = views.map(x => x.id);
+                        const a = ids[idx - 1]; ids[idx - 1] = ids[idx]; ids[idx] = a;
+                        reorderViews(ids);
+                      }}>↑</button>
+                    )}
+                    {idx < views.length - 1 && (
+                      <button className="ghost" title="↓" onClick={() => {
+                        const ids = views.map(x => x.id);
+                        const a = ids[idx + 1]; ids[idx + 1] = ids[idx]; ids[idx] = a;
+                        reorderViews(ids);
+                      }}>↓</button>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
           {view === "list" ? (

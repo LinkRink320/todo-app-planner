@@ -135,11 +135,15 @@ db.serialize(() => {
     line_user_id TEXT NOT NULL,
     name TEXT NOT NULL,
     payload TEXT NOT NULL,
+    view_order INTEGER,
     created_at TEXT DEFAULT (datetime('now','localtime')),
     updated_at TEXT
   )`);
   db.run(
     "CREATE INDEX IF NOT EXISTS idx_views_user_name ON saved_views(line_user_id, name)"
+  );
+  db.run(
+    "CREATE INDEX IF NOT EXISTS idx_views_user_order ON saved_views(line_user_id, view_order)"
   );
 
   db.run(`CREATE TABLE IF NOT EXISTS logs(

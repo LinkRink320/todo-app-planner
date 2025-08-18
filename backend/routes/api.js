@@ -359,7 +359,7 @@ router.get("/views", (req, res) => {
   const { line_user_id } = req.query;
   if (!line_user_id) return res.status(400).json({ error: "line_user_id required" });
   db.all(
-    "SELECT id,name,payload,created_at,updated_at FROM saved_views WHERE line_user_id=? ORDER BY id DESC",
+    "SELECT id,name,payload,view_order,created_at,updated_at FROM saved_views WHERE line_user_id=? ORDER BY COALESCE(view_order, 1e9), id DESC",
     [line_user_id],
     (e, rows) => {
       if (e) return res.status(500).json({ error: "db", detail: String(e) });
@@ -409,6 +409,24 @@ router.delete("/views/:id", (req, res) => {
   db.run("DELETE FROM saved_views WHERE id=?", [id], function (err) {
     if (err) return res.status(500).json({ error: "db", detail: String(err) });
     res.json({ deleted: this?.changes || 0 });
+  });
+});
+
+router.post("/views/reorder", (req, res) => {
+  const { line_user_id, orderedIds } = req.body || {};
+  if (!line_user_id || !Array.isArray(orderedIds)) return res.status(400).json({ error: "line_user_id and orderedIds required" });
+  const stmt = db.prepare("UPDATE saved_views SET view_order=? WHERE id=? AND line_user_id=?");
+  db.run("BEGIN");
+  orderedIds.forEach((id, idx) => stmt.run([idx + 1, id, line_user_id]));
+  stmt.finalize((e) => {
+    if (e) {
+      try { db.run("ROLLBACK"); } catch {}
+      return res.status(500).json({ error: "db", detail: String(e) });
+    }
+    db.run("COMMIT", (e2) => {
+      if (e2) return res.status(500).json({ error: "db", detail: String(e2) });
+      res.json({ updated: orderedIds.length });
+    });
   });
 });
 
