@@ -45,7 +45,7 @@ export default function App() {
     title: "",
     deadline: "",
     importance: "",
-  estimated_minutes: "",
+    estimated_minutes: "",
   });
 
   const isMobile = useMemo(() => {
@@ -126,7 +126,10 @@ export default function App() {
     showMsg("プロジェクトを追加しました");
   }
   async function loadViews() {
-    const r = await fetch(`/api/views?line_user_id=${encodeURIComponent(uid)}`, { headers: await h() });
+    const r = await fetch(
+      `/api/views?line_user_id=${encodeURIComponent(uid)}`,
+      { headers: await h() }
+    );
     if (!r.ok) return; // silent
     setViews(await r.json());
   }
@@ -142,7 +145,11 @@ export default function App() {
     const r = await fetch(`/api/views`, {
       method: "POST",
       headers: await h(),
-      body: JSON.stringify({ line_user_id: uid, name: viewName.trim(), payload }),
+      body: JSON.stringify({
+        line_user_id: uid,
+        name: viewName.trim(),
+        payload,
+      }),
     });
     if (!r.ok) return showErr(`save view ${r.status}`);
     setViewName("");
@@ -150,7 +157,10 @@ export default function App() {
     showMsg("ビューを保存しました");
   }
   async function deleteView(id) {
-    const r = await fetch(`/api/views/${id}`, { method: "DELETE", headers: await h() });
+    const r = await fetch(`/api/views/${id}`, {
+      method: "DELETE",
+      headers: await h(),
+    });
     if (!r.ok) return showErr(`delete view ${r.status}`);
     loadViews();
   }
@@ -181,11 +191,11 @@ export default function App() {
     // In board/calendar view, fetch all statuses to populate columns/cells
     if (view !== "list") qs.set("status", "all");
     else if (status) qs.set("status", status);
-  if (q) qs.set("q", q);
-  if (fImportance) qs.set("importance", fImportance);
-  // include todo counts for list view (cheap aggregate)
-  if (view === "list") qs.set("with_todo_counts", "true");
-  const r = await fetch(`/api/tasks?${qs.toString()}`, {
+    if (q) qs.set("q", q);
+    if (fImportance) qs.set("importance", fImportance);
+    // include todo counts for list view (cheap aggregate)
+    if (view === "list") qs.set("with_todo_counts", "true");
+    const r = await fetch(`/api/tasks?${qs.toString()}`, {
       headers: await h(),
     });
     if (!r.ok) return showErr(`tasks ${r.status}`);
@@ -202,9 +212,9 @@ export default function App() {
       title: ttitle,
       deadline: deadlineOut,
       project_id: typeof pid === "number" ? pid : null,
-  importance: timportance || null,
-  repeat: trepeat || null,
-  estimated_minutes: testimated ? Number(testimated) : null,
+      importance: timportance || null,
+      repeat: trepeat || null,
+      estimated_minutes: testimated ? Number(testimated) : null,
     };
     const r = await fetch("/api/tasks", {
       method: "POST",
@@ -213,8 +223,8 @@ export default function App() {
     });
     if (!r.ok) return showErr(`create task ${r.status}`);
     setTtitle("");
-  setTimportance("");
-  setTestimated("");
+    setTimportance("");
+    setTestimated("");
     loadTasks();
     showMsg("タスクを追加しました");
   }
@@ -232,8 +242,8 @@ export default function App() {
     setEditVals({
       title: t.title,
       deadline: t.deadline ? t.deadline.replace(" ", "T") : "",
-  importance: t.importance || "",
-  estimated_minutes: t.estimated_minutes || "",
+      importance: t.importance || "",
+      estimated_minutes: t.estimated_minutes || "",
     });
     if (view === "board") setView("list");
   }
@@ -246,7 +256,9 @@ export default function App() {
       title: editVals.title,
       deadline: editVals.deadline ? editVals.deadline.replace("T", " ") : null,
       importance: editVals.importance || null,
-  estimated_minutes: editVals.estimated_minutes ? Number(editVals.estimated_minutes) : null,
+      estimated_minutes: editVals.estimated_minutes
+        ? Number(editVals.estimated_minutes)
+        : null,
     };
     const r = await fetch(`/api/tasks/${id}`, {
       method: "PATCH",
@@ -424,7 +436,10 @@ export default function App() {
               <option value="medium">中</option>
               <option value="low">低</option>
             </select>
-            <select value={trepeat} onChange={(e) => setTrepeat(e.target.value)}>
+            <select
+              value={trepeat}
+              onChange={(e) => setTrepeat(e.target.value)}
+            >
               <option value="">繰り返し(任意)</option>
               <option value="daily">毎日</option>
               <option value="weekdays">平日</option>
@@ -437,8 +452,15 @@ export default function App() {
             <button onClick={loadTasks}>更新</button>
           </div>
           <div className="grid-2" style={{ marginTop: 8 }}>
-            <input placeholder="検索 (タイトル)" value={q} onChange={(e) => setQ(e.target.value)} />
-            <select value={fImportance} onChange={(e) => setFImportance(e.target.value)}>
+            <input
+              placeholder="検索 (タイトル)"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+            <select
+              value={fImportance}
+              onChange={(e) => setFImportance(e.target.value)}
+            >
               <option value="">重要度: すべて</option>
               <option value="high">高</option>
               <option value="medium">中</option>
@@ -446,30 +468,61 @@ export default function App() {
             </select>
           </div>
           <div className="grid-2" style={{ marginTop: 8 }}>
-            <input placeholder="保存名 (複合ビュー)" value={viewName} onChange={(e) => setViewName(e.target.value)} />
+            <input
+              placeholder="保存名 (複合ビュー)"
+              value={viewName}
+              onChange={(e) => setViewName(e.target.value)}
+            />
             <button onClick={saveCurrentView}>保存</button>
           </div>
           {views.length > 0 && (
             <div className="panel" style={{ marginTop: 8 }}>
               <div style={{ fontWeight: 600, marginBottom: 6 }}>保存ビュー</div>
-              <div className="row" style={{ flexWrap: 'wrap' }}>
+              <div className="row" style={{ flexWrap: "wrap" }}>
                 {views.map((v, idx) => (
                   <div key={v.id} className="row" style={{ gap: 4 }}>
-                    <button className="ghost" onClick={() => applyViewPayload(v.payload)}>{v.name}</button>
-                    <button className="ghost" onClick={() => deleteView(v.id)} title="削除">×</button>
+                    <button
+                      className="ghost"
+                      onClick={() => applyViewPayload(v.payload)}
+                    >
+                      {v.name}
+                    </button>
+                    <button
+                      className="ghost"
+                      onClick={() => deleteView(v.id)}
+                      title="削除"
+                    >
+                      ×
+                    </button>
                     {idx > 0 && (
-                      <button className="ghost" title="↑" onClick={() => {
-                        const ids = views.map(x => x.id);
-                        const a = ids[idx - 1]; ids[idx - 1] = ids[idx]; ids[idx] = a;
-                        reorderViews(ids);
-                      }}>↑</button>
+                      <button
+                        className="ghost"
+                        title="↑"
+                        onClick={() => {
+                          const ids = views.map((x) => x.id);
+                          const a = ids[idx - 1];
+                          ids[idx - 1] = ids[idx];
+                          ids[idx] = a;
+                          reorderViews(ids);
+                        }}
+                      >
+                        ↑
+                      </button>
                     )}
                     {idx < views.length - 1 && (
-                      <button className="ghost" title="↓" onClick={() => {
-                        const ids = views.map(x => x.id);
-                        const a = ids[idx + 1]; ids[idx + 1] = ids[idx]; ids[idx] = a;
-                        reorderViews(ids);
-                      }}>↓</button>
+                      <button
+                        className="ghost"
+                        title="↓"
+                        onClick={() => {
+                          const ids = views.map((x) => x.id);
+                          const a = ids[idx + 1];
+                          ids[idx + 1] = ids[idx];
+                          ids[idx] = a;
+                          reorderViews(ids);
+                        }}
+                      >
+                        ↓
+                      </button>
                     )}
                   </div>
                 ))}
@@ -478,168 +531,184 @@ export default function App() {
           )}
           {view === "list" ? (
             <>
-            <ul className="list" style={{ marginTop: 12 }}>
-              {tasks.length === 0 ? (
-                <li style={{ color: "#777", padding: "8px 0" }}>
-                  タスクがありません。以下を確認してください：
-                  <ul>
-                    <li>ステータスを「すべて」にする</li>
-                    <li>「未分類」/「すべて」フィルタを切り替える</li>
-                    <li>
-                      ログインのLINE User ID が正しいか（右上のログインで再設定）
-                    </li>
-                  </ul>
-                  <div className="row stack-sm" style={{ marginTop: 8 }}>
-                    <button onClick={() => setStatus("all")}>すべて表示</button>
-                    <button onClick={() => setPid(null)}>プロジェクト解除</button>
-                  </div>
-                </li>
-              ) : (
-                tasks.map((t) => (
-                  <li
-                    key={t.id}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      padding: "8px 0",
-                      borderBottom: "1px solid #eee",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={t.status === "done"}
-                      onChange={(e) =>
-                        updateTask(t.id, e.target.checked ? "done" : "pending")
-                      }
-                    />
-                    <div style={{ flex: 1 }}>
-                      {editingId === t.id ? (
-                        <>
-                          <input
-                            value={editVals.title}
-                            onChange={(e) =>
-                              setEditVals({ ...editVals, title: e.target.value })
-                            }
-                            style={{ width: "100%", marginBottom: 6 }}
-                          />
-                          <div className="grid-2" style={{ marginBottom: 6 }}>
-                            <input
-                              type="datetime-local"
-                              value={editVals.deadline}
-                              onChange={(e) =>
-                                setEditVals({
-                                  ...editVals,
-                                  deadline: e.target.value,
-                                })
-                              }
-                            />
-                            <select
-                              value={editVals.importance}
-                              onChange={(e) =>
-                                setEditVals({
-                                  ...editVals,
-                                  importance: e.target.value,
-                                })
-                              }
-                            >
-                              <option value="">重要度(任意)</option>
-                              <option value="high">高</option>
-                              <option value="medium">中</option>
-                              <option value="low">低</option>
-                            </select>
-                          </div>
-                          <div className="grid-2" style={{ marginBottom: 6 }}>
-                            <input
-                              type="number"
-                              min="0"
-                              placeholder="所要時間(分) 任意"
-                              value={editVals.estimated_minutes}
-                              onChange={(e) =>
-                                setEditVals({
-                                  ...editVals,
-                                  estimated_minutes: e.target.value,
-                                })
-                              }
-                            />
-                            <span />
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <div>{t.title}</div>
-                          <div style={{ color: "#777", fontSize: 12 }}>
-                            {t.deadline || "-"} ・ {t.status}
-                            {typeof t.estimated_minutes === "number" ? ` ・ 目安:${t.estimated_minutes}分` : ""}
-                            {t.urgency
-                              ? ` ・ 緊急度:${
-                                  t.urgency === "high"
-                                    ? "高"
-                                    : t.urgency === "medium"
-                                    ? "中"
-                                    : "低"
-                                }`
-                              : ""}
-                            {t.importance
-                              ? ` ・ 重要度:${
-                                  t.importance === "high"
-                                    ? "高"
-                                    : t.importance === "medium"
-                                    ? "中"
-                                    : "低"
-                                }`
-                              : ""}
-                            {typeof t.todos_total === "number" && t.todos_total > 0
-                              ? ` ・ ✓ ${t.todos_done || 0}/${t.todos_total}`
-                              : ""}
-                            {t.type === "long" && typeof t.progress === "number"
-                              ? ` ・ 進捗 ${t.progress}%`
-                              : ""}
-                          </div>
-                        </>
-                      )}
+              <ul className="list" style={{ marginTop: 12 }}>
+                {tasks.length === 0 ? (
+                  <li style={{ color: "#777", padding: "8px 0" }}>
+                    タスクがありません。以下を確認してください：
+                    <ul>
+                      <li>ステータスを「すべて」にする</li>
+                      <li>「未分類」/「すべて」フィルタを切り替える</li>
+                      <li>
+                        ログインのLINE User ID
+                        が正しいか（右上のログインで再設定）
+                      </li>
+                    </ul>
+                    <div className="row stack-sm" style={{ marginTop: 8 }}>
+                      <button onClick={() => setStatus("all")}>
+                        すべて表示
+                      </button>
+                      <button onClick={() => setPid(null)}>
+                        プロジェクト解除
+                      </button>
                     </div>
-                    {editingId === t.id ? (
-                      <div className="row stack-sm">
-                        <button onClick={() => saveEdit(t.id)}>保存</button>
-                        <button className="ghost" onClick={cancelEdit}>
-                          キャンセル
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="row stack-sm">
-                        <button onClick={() => startEdit(t)}>編集</button>
-                        <button onClick={() => updateTask(t.id, "done")}>
-                          完了
-                        </button>
-                        <button
-                          className="ghost"
-                          onClick={() => {
-                            const next = new Set(openTodos);
-                            if (next.has(t.id)) next.delete(t.id);
-                            else next.add(t.id);
-                            setOpenTodos(next);
-                          }}
-                        >
-                          Todos
-                        </button>
-                      </div>
-                    )}
                   </li>
-                ))
-              )}
-            </ul>
-            {tasks.map((t) => (
-              openTodos.has(t.id) ? (
-                <div key={`todos-${t.id}`} style={{ marginLeft: 32 }}>
-                  <Todos
-                    taskId={t.id}
-                    getHeaders={h}
-                    onChanged={loadTasks}
-                  />
-                </div>
-              ) : null
-            ))}
+                ) : (
+                  tasks.map((t) => (
+                    <React.Fragment key={t.id}>
+                      <li
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: "8px 0",
+                          borderBottom: "1px solid #eee",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={t.status === "done"}
+                          onChange={(e) =>
+                            updateTask(
+                              t.id,
+                              e.target.checked ? "done" : "pending"
+                            )
+                          }
+                        />
+                        <div style={{ flex: 1 }}>
+                          {editingId === t.id ? (
+                            <>
+                              <input
+                                value={editVals.title}
+                                onChange={(e) =>
+                                  setEditVals({
+                                    ...editVals,
+                                    title: e.target.value,
+                                  })
+                                }
+                                style={{ width: "100%", marginBottom: 6 }}
+                              />
+                              <div className="grid-2" style={{ marginBottom: 6 }}>
+                                <input
+                                  type="datetime-local"
+                                  value={editVals.deadline}
+                                  onChange={(e) =>
+                                    setEditVals({
+                                      ...editVals,
+                                      deadline: e.target.value,
+                                    })
+                                  }
+                                />
+                                <select
+                                  value={editVals.importance}
+                                  onChange={(e) =>
+                                    setEditVals({
+                                      ...editVals,
+                                      importance: e.target.value,
+                                    })
+                                  }
+                                >
+                                  <option value="">重要度(任意)</option>
+                                  <option value="high">高</option>
+                                  <option value="medium">中</option>
+                                  <option value="low">低</option>
+                                </select>
+                              </div>
+                              <div className="grid-2" style={{ marginBottom: 6 }}>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  placeholder="所要時間(分) 任意"
+                                  value={editVals.estimated_minutes}
+                                  onChange={(e) =>
+                                    setEditVals({
+                                      ...editVals,
+                                      estimated_minutes: e.target.value,
+                                    })
+                                  }
+                                />
+                                <span />
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div>{t.title}</div>
+                              <div style={{ color: "#777", fontSize: 12 }}>
+                                {t.deadline || "-"} ・ {t.status}
+                                {typeof t.estimated_minutes === "number"
+                                  ? ` ・ 目安:${t.estimated_minutes}分`
+                                  : ""}
+                                {t.urgency
+                                  ? ` ・ 緊急度:${
+                                      t.urgency === "high"
+                                        ? "高"
+                                        : t.urgency === "medium"
+                                        ? "中"
+                                        : "低"
+                                    }`
+                                  : ""}
+                                {t.importance
+                                  ? ` ・ 重要度:${
+                                      t.importance === "high"
+                                        ? "高"
+                                        : t.importance === "medium"
+                                        ? "中"
+                                        : "低"
+                                    }`
+                                  : ""}
+                                {typeof t.todos_total === "number" &&
+                                t.todos_total > 0
+                                  ? ` ・ ✓ ${t.todos_done || 0}/${t.todos_total}`
+                                  : ""}
+                                {t.type === "long" &&
+                                typeof t.progress === "number"
+                                  ? ` ・ 進捗 ${t.progress}%`
+                                  : ""}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                        {editingId === t.id ? (
+                          <div className="row stack-sm">
+                            <button onClick={() => saveEdit(t.id)}>保存</button>
+                            <button className="ghost" onClick={cancelEdit}>
+                              キャンセル
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="row stack-sm">
+                            <button onClick={() => startEdit(t)}>編集</button>
+                            <button onClick={() => updateTask(t.id, "done")}>
+                              完了
+                            </button>
+                            <button
+                              className="ghost"
+                              onClick={() => {
+                                const next = new Set(openTodos);
+                                if (next.has(t.id)) next.delete(t.id);
+                                else next.add(t.id);
+                                setOpenTodos(next);
+                              }}
+                            >
+                              Todos
+                            </button>
+                          </div>
+                        )}
+                      </li>
+                      {openTodos.has(t.id) && (
+                        <li style={{ padding: 0, borderBottom: "none" }}>
+                          <div style={{ marginLeft: 32 }}>
+                            <Todos
+                              taskId={t.id}
+                              getHeaders={h}
+                              onChanged={loadTasks}
+                            />
+                          </div>
+                        </li>
+                      )}
+                    </React.Fragment>
+                  ))
+                )}
+              </ul>
             </>
           ) : view === "board" ? (
             <Board
@@ -650,14 +719,29 @@ export default function App() {
               }}
               onDropStatus={(id, s) => updateTask(id, s)}
               onEdit={(t) => startEdit(t)}
-              onToggleDone={(id, done) => updateTask(id, done ? "done" : "pending")}
+              onToggleDone={(id, done) =>
+                updateTask(id, done ? "done" : "pending")
+              }
               onReorder={async (status, orderedIds) => {
                 await fetch("/api/tasks/reorder", {
                   method: "POST",
                   headers: await h(),
-                  body: JSON.stringify({ line_user_id: uid, status, orderedIds }),
+                  body: JSON.stringify({
+                    line_user_id: uid,
+                    status,
+                    orderedIds,
+                  }),
                 });
                 loadTasks();
+              }}
+              getHeaders={h}
+              onTodosChanged={loadTasks}
+              openTodos={openTodos}
+              onToggleTodos={(taskId) => {
+                const next = new Set(openTodos);
+                if (next.has(taskId)) next.delete(taskId);
+                else next.add(taskId);
+                setOpenTodos(next);
               }}
             />
           ) : view === "calendar" ? (
