@@ -98,6 +98,13 @@ button.ghost {
   padding: 10px 0;
   border-bottom: 1px solid #eee;
 }
+.list > li.clickable:hover {
+  background: #fafafa;
+}
+.list > li.active {
+  background: #f6faff;
+  border-left: 3px solid #91caff;
+}
 
 .grid-2 {
   display: grid;

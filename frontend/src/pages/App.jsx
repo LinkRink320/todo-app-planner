@@ -50,8 +50,8 @@ export default function App() {
     importance: "",
     estimated_minutes: "",
     repeat: "",
-  url: "",
-  details_md: "",
+    url: "",
+    details_md: "",
   });
 
   const currentProject = useMemo(() => {
@@ -130,7 +130,12 @@ export default function App() {
     const r = await fetch("/api/projects", {
       method: "POST",
       headers: await h(),
-      body: JSON.stringify({ line_user_id: uid, name: pname, goal: pgoal, description: pdesc }),
+      body: JSON.stringify({
+        line_user_id: uid,
+        name: pname,
+        goal: pgoal,
+        description: pdesc,
+      }),
     });
     if (!r.ok) return showErr(`create project ${r.status}`);
     setPname("");
@@ -259,8 +264,8 @@ export default function App() {
       importance: t.importance || "",
       estimated_minutes: t.estimated_minutes || "",
       repeat: t.repeat || "",
-  url: t.url || "",
-  details_md: t.details_md || "",
+      url: t.url || "",
+      details_md: t.details_md || "",
     });
     if (view === "board") setView("list");
   }
@@ -277,8 +282,8 @@ export default function App() {
         ? Number(editVals.estimated_minutes)
         : null,
       repeat: editVals.repeat || null,
-  url: editVals.url || null,
-  details_md: editVals.details_md || null,
+      url: editVals.url || null,
+      details_md: editVals.details_md || null,
     };
     const r = await fetch(`/api/tasks/${id}`, {
       method: "PATCH",
@@ -340,16 +345,24 @@ export default function App() {
               {projects.map((p) => (
                 <li
                   key={p.id}
+                  className={Number(pid) === Number(p.id) ? "active clickable" : "clickable"}
+                  onClick={() => setPid(p.id)}
                   style={{
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "space-between",
-                    padding: "8px 0",
+                    padding: "8px 8px",
                     borderBottom: "1px solid #eee",
+                    cursor: "pointer",
                   }}
+                  title={p.goal ? `目標: ${p.goal}` : p.name}
                 >
-                  <div>{p.name}</div>
-                  <button onClick={() => setPid(p.id)}>開く</button>
+                  <div style={{ fontWeight: Number(pid) === Number(p.id) ? 700 : 500 }}>
+                    {p.name}
+                  </div>
+                  <span style={{ color: "#999", fontSize: 12 }}>
+                    {p.goal ? "目標あり" : ""}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -366,23 +379,7 @@ export default function App() {
               />
               <button onClick={createProject}>追加</button>
             </div>
-              <div className="grid-2" style={{ marginTop: 6 }}>
-                <input
-                  placeholder="目標(任意)"
-                  value={pgoal}
-                  onChange={(e) => setPgoal(e.target.value)}
-                />
-                <span />
-              </div>
-              <div style={{ marginTop: 6 }}>
-                <textarea
-                  rows={3}
-                  placeholder="説明(マークダウン可) 任意"
-                  value={pdesc}
-                  onChange={(e) => setPdesc(e.target.value)}
-                />
-              </div>
-            <div className="grid-2" style={{ marginTop: 8 }}>
+            <div className="grid-2" style={{ marginTop: 6 }}>
               <input
                 placeholder="目標(任意)"
                 value={pgoal}
@@ -390,14 +387,15 @@ export default function App() {
               />
               <span />
             </div>
-            <div style={{ marginTop: 8 }}>
+            <div style={{ marginTop: 6 }}>
               <textarea
+                rows={3}
                 placeholder="説明(マークダウン可) 任意"
-                rows={4}
                 value={pdesc}
                 onChange={(e) => setPdesc(e.target.value)}
               />
             </div>
+            
           </aside>
         )}
         <main className="panel">
@@ -420,6 +418,7 @@ export default function App() {
                   : pid
                   ? ` - P${pid}`
                   : ""}
+                {Array.isArray(tasks) ? `（${tasks.length}件）` : ""}
               </div>
               {currentProject?.goal ? (
                 <div style={{ color: "#555", marginTop: 2 }}>
@@ -719,12 +718,18 @@ export default function App() {
                                   <option value="monthly">毎月</option>
                                 </select>
                               </div>
-                              <div className="grid-2" style={{ marginBottom: 6 }}>
+                              <div
+                                className="grid-2"
+                                style={{ marginBottom: 6 }}
+                              >
                                 <input
                                   placeholder="関連URL(任意)"
                                   value={editVals.url}
                                   onChange={(e) =>
-                                    setEditVals({ ...editVals, url: e.target.value })
+                                    setEditVals({
+                                      ...editVals,
+                                      url: e.target.value,
+                                    })
                                   }
                                 />
                                 <span />
@@ -735,7 +740,10 @@ export default function App() {
                                   placeholder="詳細(マークダウン可) 任意"
                                   value={editVals.details_md}
                                   onChange={(e) =>
-                                    setEditVals({ ...editVals, details_md: e.target.value })
+                                    setEditVals({
+                                      ...editVals,
+                                      details_md: e.target.value,
+                                    })
                                   }
                                 />
                               </div>
