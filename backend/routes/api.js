@@ -182,7 +182,10 @@ router.patch("/tasks/:id", (req, res) => {
     args.push(d);
   }
   if (typeof project_id !== "undefined") {
-    const p = project_id === null || project_id === "none" ? null : Number(project_id) || null;
+    const p =
+      project_id === null || project_id === "none"
+        ? null
+        : Number(project_id) || null;
     sets.push("project_id=?");
     args.push(p);
   }
@@ -205,10 +208,13 @@ router.patch("/tasks/:id", (req, res) => {
     args.push(s);
   }
 
-  if (!sets.length) return res.status(400).json({ error: "no fields to update" });
+  if (!sets.length)
+    return res.status(400).json({ error: "no fields to update" });
 
   // always bump updated_at
-  const sql = `UPDATE tasks SET ${sets.join(", ")}, updated_at=datetime('now','localtime') WHERE id=?`;
+  const sql = `UPDATE tasks SET ${sets.join(
+    ", "
+  )}, updated_at=datetime('now','localtime') WHERE id=?`;
   db.run(sql, [...args, id], function (err) {
     if (err) return res.status(500).json({ error: "db", detail: String(err) });
     res.json({ updated: this?.changes || 0 });
