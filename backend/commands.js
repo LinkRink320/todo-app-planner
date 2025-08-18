@@ -1,7 +1,7 @@
 function toHalfWidth(str) {
   // Convert full-width ASCII range to half-width to tolerate mobile input (ＵＲＬ, etc.)
   return str.replace(/[！-～]/g, (ch) =>
-    String.fromCharCode(ch.charCodeAt(0) - 0xFEE0)
+    String.fromCharCode(ch.charCodeAt(0) - 0xfee0)
   );
 }
 
@@ -13,10 +13,15 @@ function parse(text) {
       const [, date, time, ...rest] = parts;
       if (!date || !time || !rest.length)
         return { type: "error", msg: "書式: add YYYY-MM-DD HH:mm タイトル" };
-      return { type: "add", deadline: `${date} ${time}`, title: rest.join(" ") };
+      return {
+        type: "add",
+        deadline: `${date} ${time}`,
+        title: rest.join(" "),
+      };
     } else if (parts.length >= 2) {
       const title = parts.slice(1).join(" ");
-      if (!title) return { type: "error", msg: "書式: add [YYYY-MM-DD HH:mm] タイトル" };
+      if (!title)
+        return { type: "error", msg: "書式: add [YYYY-MM-DD HH:mm] タイトル" };
       return { type: "add", deadline: null, title };
     }
     return { type: "error", msg: "書式: add [YYYY-MM-DD HH:mm] タイトル" };
@@ -27,10 +32,15 @@ function parse(text) {
       const [, date, time, ...rest] = parts;
       if (!date || !time || !rest.length)
         return { type: "error", msg: "書式: addl YYYY-MM-DD HH:mm タイトル" };
-      return { type: "add_long", deadline: `${date} ${time}`, title: rest.join(" ") };
+      return {
+        type: "add_long",
+        deadline: `${date} ${time}`,
+        title: rest.join(" "),
+      };
     } else if (parts.length >= 2) {
       const title = parts.slice(1).join(" ");
-      if (!title) return { type: "error", msg: "書式: addl [YYYY-MM-DD HH:mm] タイトル" };
+      if (!title)
+        return { type: "error", msg: "書式: addl [YYYY-MM-DD HH:mm] タイトル" };
       return { type: "add_long", deadline: null, title };
     }
     return { type: "error", msg: "書式: addl [YYYY-MM-DD HH:mm] タイトル" };
@@ -48,20 +58,39 @@ function parse(text) {
   if (t.startsWith("addp ")) {
     const parts = t.split(" ");
     const projectId = Number(parts[1]) || 0;
-    if (!projectId) return { type: "error", msg: "書式: addp {projectId} [YYYY-MM-DD HH:mm] タイトル" };
+    if (!projectId)
+      return {
+        type: "error",
+        msg: "書式: addp {projectId} [YYYY-MM-DD HH:mm] タイトル",
+      };
     if (parts.length >= 5) {
       const date = parts[2];
       const time = parts[3];
       const title = parts.slice(4).join(" ");
       if (!date || !time || !title)
-        return { type: "error", msg: "書式: addp {projectId} YYYY-MM-DD HH:mm タイトル" };
-      return { type: "add_project_task", projectId, deadline: `${date} ${time}`, title };
+        return {
+          type: "error",
+          msg: "書式: addp {projectId} YYYY-MM-DD HH:mm タイトル",
+        };
+      return {
+        type: "add_project_task",
+        projectId,
+        deadline: `${date} ${time}`,
+        title,
+      };
     } else if (parts.length >= 3) {
       const title = parts.slice(2).join(" ");
-      if (!title) return { type: "error", msg: "書式: addp {projectId} [YYYY-MM-DD HH:mm] タイトル" };
+      if (!title)
+        return {
+          type: "error",
+          msg: "書式: addp {projectId} [YYYY-MM-DD HH:mm] タイトル",
+        };
       return { type: "add_project_task", projectId, deadline: null, title };
     }
-    return { type: "error", msg: "書式: addp {projectId} [YYYY-MM-DD HH:mm] タイトル" };
+    return {
+      type: "error",
+      msg: "書式: addp {projectId} [YYYY-MM-DD HH:mm] タイトル",
+    };
   }
   if (t.startsWith("lsp ")) {
     const projectId = Number(t.split(" ")[1]) || 0;

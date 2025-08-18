@@ -14,16 +14,21 @@ router.post("/webhook", middleware(line), async (req, res) => {
   if (!events.length) return;
   try {
     await Promise.all(
-  events.map(async (e) => {
+      events.map(async (e) => {
         if (e.type !== "message" || e.message.type !== "text") return;
         const u = e.source.userId;
         const cmd = parse(e.message.text);
         if (cmd.type === "app_url") {
           // Prefer explicit PUBLIC_APP_URL; fallback to inferring from Host header
           const host = req.headers["x-forwarded-host"] || req.headers.host;
-          const proto = (req.headers["x-forwarded-proto"] || "https").split(",")[0];
-          const base = env.PUBLIC_APP_URL || (host ? `${proto}://${host}` : null);
-          const text = base ? `アプリURL: ${base}` : "アプリURLが未設定です (PUBLIC_APP_URL を設定してください)";
+          const proto = (req.headers["x-forwarded-proto"] || "https").split(
+            ","
+          )[0];
+          const base =
+            env.PUBLIC_APP_URL || (host ? `${proto}://${host}` : null);
+          const text = base
+            ? `アプリURL: ${base}`
+            : "アプリURLが未設定です (PUBLIC_APP_URL を設定してください)";
           return client.replyMessage(e.replyToken, { type: "text", text });
         }
 
@@ -69,7 +74,7 @@ router.post("/webhook", middleware(line), async (req, res) => {
           );
           return client.replyMessage(e.replyToken, {
             type: "text",
-            text: `登録OK: ${(cmd.deadline || "(期限なし)")} ${cmd.title}`,
+            text: `登録OK: ${cmd.deadline || "(期限なし)"} ${cmd.title}`,
           });
         }
 
@@ -120,7 +125,9 @@ router.post("/webhook", middleware(line), async (req, res) => {
               );
               client.replyMessage(e.replyToken, {
                 type: "text",
-                text: `P${cmd.projectId} に登録OK: ${(cmd.deadline || "(期限なし)")} ${cmd.title}`,
+                text: `P${cmd.projectId} に登録OK: ${
+                  cmd.deadline || "(期限なし)"
+                } ${cmd.title}`,
               });
             }
           );
@@ -129,14 +136,26 @@ router.post("/webhook", middleware(line), async (req, res) => {
 
         if (cmd.type === "list_project_tasks") {
           db.all(
-            'SELECT id,title,deadline,status FROM tasks WHERE line_user_id=? AND project_id=? AND status="pending" ORDER BY CASE WHEN deadline IS NULL THEN 1 ELSE 0 END, deadline ASC LIMIT 20',
+            'SELECT id,title,deadline,status,importance FROM tasks WHERE line_user_id=? AND project_id=? AND status="pending" ORDER BY CASE WHEN deadline IS NULL THEN 1 ELSE 0 END, deadline ASC LIMIT 20',
             [u, cmd.projectId],
             (err, rows) => {
               const text = err
                 ? "エラー"
                 : rows?.length
                 ? rows
-                    .map((r) => `${r.id}: [${r.deadline || "-"}] ${r.title}`)
+                    .map((r) => {
+                      const urgency = (() => {
+                        if (!r.deadline) return "低";
+                        const t = Date.parse(String(r.deadline).replace(" ", "T"));
+                        if (Number.isNaN(t)) return "低";
+                        const diffDays = (t - Date.now()) / (24 * 60 * 60 * 1000);
+                        if (diffDays <= 3) return "高";
+                        if (diffDays <= 7) return "中";
+                        return "低";
+                      })();
+                      const imp = r.importance ? `・重要度:${r.importance}` : "";
+                      return `${r.id}: [${r.deadline || "-"}] ${r.title} ・緊急度:${urgency}${imp}`;
+                    })
                     .join("\n")
                 : "未達タスクなし";
               client.replyMessage(e.replyToken, { type: "text", text });
@@ -152,20 +171,32 @@ router.post("/webhook", middleware(line), async (req, res) => {
           );
           return client.replyMessage(e.replyToken, {
             type: "text",
-            text: `長期 追加OK: ${(cmd.deadline || "(期限なし)")} ${cmd.title}`,
+            text: `長期 追加OK: ${cmd.deadline || "(期限なし)"} ${cmd.title}`,
           });
         }
 
         if (cmd.type === "list") {
           db.all(
-            'SELECT id,title,deadline FROM tasks WHERE line_user_id=? AND status="pending" ORDER BY CASE WHEN deadline IS NULL THEN 1 ELSE 0 END, deadline ASC LIMIT 10',
+            'SELECT id,title,deadline,importance FROM tasks WHERE line_user_id=? AND status="pending" ORDER BY CASE WHEN deadline IS NULL THEN 1 ELSE 0 END, deadline ASC LIMIT 10',
             [u],
             (err, rows) => {
               const text = err
                 ? "エラー"
                 : rows.length
                 ? rows
-                    .map((r) => `${r.id}: [${r.deadline || "-"}] ${r.title}`)
+                    .map((r) => {
+                      const urgency = (() => {
+                        if (!r.deadline) return "低";
+                        const t = Date.parse(String(r.deadline).replace(" ", "T"));
+                        if (Number.isNaN(t)) return "低";
+                        const diffDays = (t - Date.now()) / (24 * 60 * 60 * 1000);
+                        if (diffDays <= 3) return "高";
+                        if (diffDays <= 7) return "中";
+                        return "低";
+                      })();
+                      const imp = r.importance ? `・重要度:${r.importance}` : "";
+                      return `${r.id}: [${r.deadline || "-"}] ${r.title} ・緊急度:${urgency}${imp}`;
+                    })
                     .join("\n")
                 : "未達タスクなし";
               client.replyMessage(e.replyToken, { type: "text", text });
@@ -225,8 +256,7 @@ router.post("/webhook", middleware(line), async (req, res) => {
 
         return client.replyMessage(e.replyToken, {
           type: "text",
-          text:
-            "使い方: whoami(=myid/id) / URL / add [YYYY-MM-DD HH:mm] タイトル / ls / done {id} / watch here(グループで) / addl [YYYY-MM-DD HH:mm] タイトル / lsl / prog {id} {0-100%} / padd 名称 / pls / addp {pid} [YYYY-MM-DD HH:mm] タイトル / lsp {pid}",
+          text: "使い方: whoami(=myid/id) / URL / add [YYYY-MM-DD HH:mm] タイトル / ls / done {id} / watch here(グループで) / addl [YYYY-MM-DD HH:mm] タイトル / lsl / prog {id} {0-100%} / padd 名称 / pls / addp {pid} [YYYY-MM-DD HH:mm] タイトル / lsp {pid}",
         });
       })
     );

@@ -114,22 +114,39 @@ router.get("/tasks", (req, res) => {
   const where = "WHERE " + conds.join(" AND ");
   const lim = Math.min(Math.max(parseInt(limit || 200, 10) || 200, 1), 1000);
   db.all(
-    `SELECT id,title,deadline,status,project_id,type,progress FROM tasks ${where} ORDER BY CASE WHEN deadline IS NULL THEN 1 ELSE 0 END, deadline ASC LIMIT ?`,
+    `SELECT id,title,deadline,status,project_id,type,progress,importance FROM tasks ${where} ORDER BY CASE WHEN deadline IS NULL THEN 1 ELSE 0 END, deadline ASC LIMIT ?`,
     [...args, lim],
     (e, rows) => {
       if (e) return res.status(500).json({ error: "db", detail: String(e) });
-      res.json(rows || []);
+      const now = Date.now();
+      const dayMs = 24 * 60 * 60 * 1000;
+      const withUrgency = (rows || []).map((r) => {
+        let urgency = "low"; // default
+        if (r.deadline) {
+          const t = Date.parse(r.deadline.replace(" ", "T"));
+          if (!Number.isNaN(t)) {
+            const diffDays = (t - now) / dayMs;
+            if (diffDays <= 3) urgency = "high";
+            else if (diffDays <= 7) urgency = "medium";
+            else urgency = "low";
+          }
+        } else {
+          urgency = "low";
+        }
+        return { ...r, urgency };
+      });
+      res.json(withUrgency);
     }
   );
 });
 
 router.post("/tasks", (req, res) => {
-  const { line_user_id, title, deadline, project_id } = req.body || {};
+  const { line_user_id, title, deadline, project_id, importance } = req.body || {};
   if (!line_user_id || !title)
     return res.status(400).json({ error: "line_user_id and title required" });
   db.run(
-    "INSERT INTO tasks(line_user_id,title,deadline,project_id) VALUES (?,?,?,?)",
-    [line_user_id, title, deadline || null, project_id || null],
+    "INSERT INTO tasks(line_user_id,title,deadline,project_id,importance) VALUES (?,?,?,?,?)",
+    [line_user_id, title, deadline || null, project_id || null, importance || null],
     function (err) {
       if (err)
         return res.status(500).json({ error: "db", detail: String(err) });

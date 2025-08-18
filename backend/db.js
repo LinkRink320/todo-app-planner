@@ -45,10 +45,13 @@ db.serialize(() => {
       alters.push("ALTER TABLE tasks ADD COLUMN updated_at TEXT");
     if (!names.has("project_id"))
       alters.push("ALTER TABLE tasks ADD COLUMN project_id INTEGER");
+    if (!names.has("importance"))
+      alters.push("ALTER TABLE tasks ADD COLUMN importance TEXT");
 
     // If deadline column is NOT NULL, migrate to allow NULL (optional deadline)
     const deadlineCol = (cols || []).find((c) => c.name === "deadline");
-    const needsDeadlineMigration = deadlineCol && Number(deadlineCol.notnull) === 1;
+    const needsDeadlineMigration =
+      deadlineCol && Number(deadlineCol.notnull) === 1;
 
     db.serialize(() => {
       alters.forEach((sql) => db.run(sql));
@@ -67,17 +70,20 @@ db.serialize(() => {
             progress INTEGER NOT NULL DEFAULT 0,
             last_progress_at TEXT,
             updated_at TEXT,
-            project_id INTEGER
+            project_id INTEGER,
+            importance TEXT
           )`);
           db.run(
-            `INSERT INTO tasks_new (id,line_user_id,title,deadline,status,created_at,type,progress,last_progress_at,updated_at,project_id)
-             SELECT id,line_user_id,title,deadline,status,created_at,COALESCE(type,'short'),COALESCE(progress,0),last_progress_at,updated_at,project_id FROM tasks`
+            `INSERT INTO tasks_new (id,line_user_id,title,deadline,status,created_at,type,progress,last_progress_at,updated_at,project_id,importance)
+             SELECT id,line_user_id,title,deadline,status,created_at,COALESCE(type,'short'),COALESCE(progress,0),last_progress_at,updated_at,project_id,importance FROM tasks`
           );
           db.run("DROP TABLE tasks");
           db.run("ALTER TABLE tasks_new RENAME TO tasks");
           db.run("COMMIT");
         } catch (e) {
-          try { db.run("ROLLBACK"); } catch {}
+          try {
+            db.run("ROLLBACK");
+          } catch {}
           console.error("[DB MIGRATE deadline nullable ERROR]", e);
         }
       }
@@ -90,6 +96,9 @@ db.serialize(() => {
       );
       db.run(
         "CREATE INDEX IF NOT EXISTS idx_tasks_user_project ON tasks(line_user_id, project_id)"
+      );
+      db.run(
+        "CREATE INDEX IF NOT EXISTS idx_tasks_user_importance ON tasks(line_user_id, importance)"
       );
     });
   });

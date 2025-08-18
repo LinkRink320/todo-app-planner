@@ -23,6 +23,7 @@ export default function App() {
   const [pname, setPname] = useState("");
   const [ttitle, setTtitle] = useState("");
   const [tdeadline, setTdeadline] = useState("");
+  const [timportance, setTimportance] = useState("");
   const [loading, setLoading] = useState(true);
   const [profileName, setProfileName] = useState("");
   const [msg, setMsg] = useState("");
@@ -137,7 +138,7 @@ export default function App() {
   async function createTask() {
     if (!uid) return showErr("LINE User IDを入力してください");
     if (!ttitle) return showErr("タスク名を入力してください");
-  // deadline is optional
+    // deadline is optional
     // If using input type="datetime-local", value is like "2025-09-01T09:00"; convert to "YYYY-MM-DD HH:mm"
     let deadlineOut = tdeadline;
     if (deadlineOut && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(deadlineOut)) {
@@ -148,6 +149,7 @@ export default function App() {
       title: ttitle,
       deadline: deadlineOut,
       project_id: typeof pid === "number" ? pid : null,
+  importance: timportance || null,
     };
     const r = await fetch("/api/tasks", {
       method: "POST",
@@ -162,6 +164,7 @@ export default function App() {
       return showErr(`create task ${r.status} ${d}`);
     }
     setTtitle("");
+  setTimportance("");
     loadTasks();
     showMsg("タスクを追加しました");
   }
@@ -298,6 +301,18 @@ export default function App() {
               onChange={(e) => setTdeadline(e.target.value)}
             />
           </div>
+          <div className="grid-2" style={{ marginTop: 8 }}>
+            <select
+              value={timportance}
+              onChange={(e) => setTimportance(e.target.value)}
+            >
+              <option value="">重要度(任意)</option>
+              <option value="high">高</option>
+              <option value="medium">中</option>
+              <option value="low">低</option>
+            </select>
+            <div />
+          </div>
           <div className="row stack-sm" style={{ marginTop: 8 }}>
             <button onClick={createTask}>タスク追加</button>
             <button onClick={loadTasks}>更新</button>
@@ -341,7 +356,9 @@ export default function App() {
                 <div style={{ flex: 1 }}>
                   <div>{t.title}</div>
                   <div style={{ color: "#777", fontSize: 12 }}>
-                    {(t.deadline || "-")} ・ {t.status}
+                    {t.deadline || "-"} ・ {t.status}
+                    {t.urgency ? ` ・ 緊急度:${t.urgency === "high" ? "高" : t.urgency === "medium" ? "中" : "低"}` : ""}
+                    {t.importance ? ` ・ 重要度:${t.importance === "high" ? "高" : t.importance === "medium" ? "中" : "低"}` : ""}
                     {t.type === "long" && typeof t.progress === "number"
                       ? ` ・ 進捗 ${t.progress}%`
                       : ""}
@@ -356,7 +373,10 @@ export default function App() {
       {/* Mobile drawer for projects */}
       {isMobile && drawerOpen && (
         <>
-          <div className="mobile-overlay" onClick={() => setDrawerOpen(false)} />
+          <div
+            className="mobile-overlay"
+            onClick={() => setDrawerOpen(false)}
+          />
           <aside className="mobile-drawer open">
             <div className="row" style={{ justifyContent: "space-between" }}>
               <div style={{ fontWeight: 700 }}>プロジェクト</div>
@@ -366,7 +386,14 @@ export default function App() {
             </div>
             <ul className="list">
               {projects.map((p) => (
-                <li key={p.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <li
+                  key={p.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}
+                >
                   <div>{p.name}</div>
                   <button
                     onClick={() => {
@@ -381,8 +408,22 @@ export default function App() {
             </ul>
             <div style={{ height: 1, background: "#eee", margin: "12px 0" }} />
             <div className="row">
-              <button onClick={() => { setPid(null); setDrawerOpen(false); }}>すべて</button>
-              <button onClick={() => { setPid("none"); setDrawerOpen(false); }}>未分類</button>
+              <button
+                onClick={() => {
+                  setPid(null);
+                  setDrawerOpen(false);
+                }}
+              >
+                すべて
+              </button>
+              <button
+                onClick={() => {
+                  setPid("none");
+                  setDrawerOpen(false);
+                }}
+              >
+                未分類
+              </button>
             </div>
             <div className="grid-2" style={{ marginTop: 8 }}>
               <input
@@ -390,7 +431,13 @@ export default function App() {
                 value={pname}
                 onChange={(e) => setPname(e.target.value)}
               />
-              <button onClick={() => { createProject(); }}>追加</button>
+              <button
+                onClick={() => {
+                  createProject();
+                }}
+              >
+                追加
+              </button>
             </div>
           </aside>
         </>
