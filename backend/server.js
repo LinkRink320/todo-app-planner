@@ -126,3 +126,111 @@ cron.schedule("* * * * *", async () => {
     }
   );
 });
+
+// Morning summary (default 08:30 local time). Override with env.MORNING_SUMMARY_CRON.
+const MORNING_SUMMARY_CRON = env.MORNING_SUMMARY_CRON || "30 8 * * *";
+cron.schedule(MORNING_SUMMARY_CRON, async () => {
+  try {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(
+      now.getDate()
+    )}`;
+    const current = `${today} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    // Get users who have relevant tasks (today's deadlines/soft_deadlines or overdue)
+    const userIds = await new Promise((resolve) => {
+      db.all(
+        `SELECT DISTINCT line_user_id FROM tasks WHERE status='pending' AND (
+           (deadline LIKE ?)
+           OR (soft_deadline LIKE ?)
+           OR (deadline IS NOT NULL AND deadline < ?)
+         ) LIMIT 1000`,
+        [`${today} %`, `${today}%`, current],
+        (e, rows) => resolve(e ? [] : rows.map((r) => r.line_user_id))
+      );
+    });
+    for (const uid of userIds) {
+      // Today's tasks by hard deadline
+      const todays = await new Promise((resolve) => {
+        db.all(
+          `SELECT id,title,deadline FROM tasks WHERE line_user_id=? AND status='pending' AND deadline LIKE ?
+           ORDER BY CASE WHEN deadline IS NULL THEN 1 ELSE 0 END, deadline LIMIT 10`,
+          [uid, `${today} %`],
+          (e, rows) => resolve(e ? [] : rows)
+        );
+      });
+      // Today's soft deadlines
+      const softs = await new Promise((resolve) => {
+        db.all(
+          `SELECT id,title,soft_deadline FROM tasks WHERE line_user_id=? AND status='pending' AND soft_deadline LIKE ?
+           ORDER BY soft_deadline LIMIT 10`,
+          [uid, `${today}%`],
+          (e, rows) => resolve(e ? [] : rows)
+        );
+      });
+      // Overdue tasks
+      const overdue = await new Promise((resolve) => {
+        db.all(
+          `SELECT id,title,deadline FROM tasks WHERE line_user_id=? AND status='pending' AND deadline IS NOT NULL AND deadline < ?
+           ORDER BY deadline ASC LIMIT 10`,
+          [uid, current],
+          (e, rows) => resolve(e ? [] : rows)
+        );
+      });
+      const lines = [];
+      lines.push(`おはようございます！本日のサマリー`);
+      if (todays.length)
+        lines.push(
+          `今日の期限 (${todays.length}):\n` +
+            todays.map((t) => `・${t.title} (${t.deadline.slice(11, 16)})`).join("\n")
+        );
+      if (softs.length)
+        lines.push(
+          `内締切 (${softs.length}):\n` +
+            softs
+              .map((t) => `・${t.title}${t.soft_deadline?.slice(10) ? ` (${t.soft_deadline.slice(11, 16)})` : ""}`)
+              .join("\n")
+        );
+      if (overdue.length)
+        lines.push(
+          `超過中 (${overdue.length}):\n` +
+            overdue.map((t) => `・${t.title} [${t.deadline}]`).join("\n")
+        );
+      if (!todays.length && !softs.length && !overdue.length)
+        lines.push("今日は期限のタスクはありません 🎉");
+      try {
+        await client.pushMessage(uid, {
+          type: "text",
+          text: lines.join("\n\n"),
+        });
+      } catch (e) {
+        console.error("[PUSH morning summary ERROR]", e?.response?.data || e);
+      }
+      // For up to 5 overdue tasks, send a confirm template with delete option
+      for (const t of overdue.slice(0, 5)) {
+        try {
+          await client.pushMessage(uid, {
+            type: "template",
+            altText: `超過削除: ${t.title}`,
+            template: {
+              type: "confirm",
+              text: `超過:『${t.title}』\n削除しますか？`,
+              actions: [
+                {
+                  type: "postback",
+                  label: "削除する",
+                  data: `action=delete-task&id=${t.id}`,
+                },
+                { type: "postback", label: "やめる", data: "action=cancel" },
+              ],
+            },
+          });
+        } catch (e) {
+          console.error("[PUSH overdue confirm ERROR]", e?.response?.data || e);
+        }
+      }
+    }
+  } catch (e) {
+    console.error("[CRON morning summary ERROR]", e);
+  }
+});

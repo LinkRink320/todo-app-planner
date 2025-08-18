@@ -81,7 +81,9 @@ router.post("/webhook", middleware(line), async (req, res) => {
             const now = new Date();
             const pad = (n) => String(n).padStart(2, "0");
             const fmt = (d, hh = "09", mm = "00") =>
-              `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${hh}:${mm}`;
+              `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(
+                d.getDate()
+              )} ${hh}:${mm}`;
             const nextWeekday = () => {
               const d = new Date();
               do {
@@ -119,6 +121,16 @@ router.post("/webhook", middleware(line), async (req, res) => {
               }
             );
             return;
+          }
+          if (action === "delete-task") {
+            const id = Number(params.get("id"));
+            if (id) {
+              db.run("DELETE FROM tasks WHERE id=? AND line_user_id=?", [id, u]);
+              return replyTextWithQuick(client, e.replyToken, `削除しました: ${id}`);
+            }
+          }
+          if (action === "cancel") {
+            return replyTextWithQuick(client, e.replyToken, "キャンセルしました。");
           }
           if (action === "done") {
             const id = Number(params.get("id"));
@@ -171,7 +183,11 @@ router.post("/webhook", middleware(line), async (req, res) => {
               items: [
                 {
                   type: "action",
-                  action: { type: "message", label: "キャンセル", text: "キャンセル" },
+                  action: {
+                    type: "message",
+                    label: "キャンセル",
+                    text: "キャンセル",
+                  },
                 },
               ],
             },
@@ -179,13 +195,22 @@ router.post("/webhook", middleware(line), async (req, res) => {
         }
         if (["キャンセル", "cancel"].includes(textRaw)) {
           if (addSessions.has(u)) addSessions.delete(u);
-          return replyTextWithQuick(client, e.replyToken, "キャンセルしました。");
+          return replyTextWithQuick(
+            client,
+            e.replyToken,
+            "キャンセルしました。"
+          );
         }
         // If waiting for title, capture and ask for deadline
         const sess = addSessions.get(u);
         if (sess?.step === "wait_title") {
           const title = textRaw;
-          if (!title) return replyTextWithQuick(client, e.replyToken, "タイトルが空です。");
+          if (!title)
+            return replyTextWithQuick(
+              client,
+              e.replyToken,
+              "タイトルが空です。"
+            );
           addSessions.set(u, { step: "choose_deadline", title });
           return client.replyMessage(e.replyToken, {
             type: "template",
@@ -195,10 +220,27 @@ router.post("/webhook", middleware(line), async (req, res) => {
               title: "期限を選択",
               text: `『${title}』の期限を選んでください`,
               actions: [
-                { type: "postback", label: "期限なし", data: "action=add-create&preset=none" },
-                { type: "postback", label: "今日21時", data: "action=add-create&preset=today21" },
-                { type: "postback", label: "明日9時", data: "action=add-create&preset=tomorrow09" },
-                { type: "datetimepicker", label: "日時指定", data: "action=add-create", mode: "datetime" },
+                {
+                  type: "postback",
+                  label: "期限なし",
+                  data: "action=add-create&preset=none",
+                },
+                {
+                  type: "postback",
+                  label: "今日21時",
+                  data: "action=add-create&preset=today21",
+                },
+                {
+                  type: "postback",
+                  label: "明日9時",
+                  data: "action=add-create&preset=tomorrow09",
+                },
+                {
+                  type: "datetimepicker",
+                  label: "日時指定",
+                  data: "action=add-create",
+                  mode: "datetime",
+                },
               ],
             },
           });
