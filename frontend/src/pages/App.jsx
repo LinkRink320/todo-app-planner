@@ -26,6 +26,9 @@ export default function App() {
   const [ttitle, setTtitle] = useState("");
   const [tdeadline, setTdeadline] = useState("");
   const [timportance, setTimportance] = useState("");
+  const [trepeat, setTrepeat] = useState("");
+  const [q, setQ] = useState("");
+  const [fImportance, setFImportance] = useState("");
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
@@ -121,6 +124,8 @@ export default function App() {
   // In board view, fetch all statuses to populate columns
   if (view === "board") qs.set("status", "all");
   else if (status) qs.set("status", status);
+  if (q) qs.set("q", q);
+  if (fImportance) qs.set("importance", fImportance);
     const r = await fetch(`/api/tasks?${qs.toString()}`, {
       headers: await h(),
     });
@@ -138,7 +143,8 @@ export default function App() {
       title: ttitle,
       deadline: deadlineOut,
       project_id: typeof pid === "number" ? pid : null,
-      importance: timportance || null,
+  importance: timportance || null,
+  repeat: trepeat || null,
     };
     const r = await fetch("/api/tasks", {
       method: "POST",
@@ -165,7 +171,7 @@ export default function App() {
     setEditVals({
       title: t.title,
       deadline: t.deadline ? t.deadline.replace(" ", "T") : "",
-      importance: t.importance || "",
+  importance: t.importance || "",
     });
     if (view === "board") setView("list");
   }
@@ -333,11 +339,26 @@ export default function App() {
               <option value="medium">中</option>
               <option value="low">低</option>
             </select>
-            <div />
+            <select value={trepeat} onChange={(e) => setTrepeat(e.target.value)}>
+              <option value="">繰り返し(任意)</option>
+              <option value="daily">毎日</option>
+              <option value="weekdays">平日</option>
+              <option value="weekly">毎週</option>
+              <option value="monthly">毎月</option>
+            </select>
           </div>
           <div className="row stack-sm" style={{ marginTop: 8 }}>
             <button onClick={createTask}>タスク追加</button>
             <button onClick={loadTasks}>更新</button>
+          </div>
+          <div className="grid-2" style={{ marginTop: 8 }}>
+            <input placeholder="検索 (タイトル)" value={q} onChange={(e) => setQ(e.target.value)} />
+            <select value={fImportance} onChange={(e) => setFImportance(e.target.value)}>
+              <option value="">重要度: すべて</option>
+              <option value="high">高</option>
+              <option value="medium">中</option>
+              <option value="low">低</option>
+            </select>
           </div>
           {view === "list" ? (
             <ul className="list" style={{ marginTop: 12 }}>
@@ -471,6 +492,14 @@ export default function App() {
               onDropStatus={(id, s) => updateTask(id, s)}
               onEdit={(t) => startEdit(t)}
               onToggleDone={(id, done) => updateTask(id, done ? "done" : "pending")}
+              onReorder={async (status, orderedIds) => {
+                await fetch("/api/tasks/reorder", {
+                  method: "POST",
+                  headers: await h(),
+                  body: JSON.stringify({ line_user_id: uid, status, orderedIds }),
+                });
+                loadTasks();
+              }}
             />
           )}
         </main>

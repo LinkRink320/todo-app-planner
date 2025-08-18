@@ -94,7 +94,16 @@ router.post("/projects", (req, res) => {
 });
 
 router.get("/tasks", (req, res) => {
-  const { line_user_id, project_id, status = "pending", limit } = req.query;
+  const {
+    line_user_id,
+    project_id,
+    status = "pending",
+    limit,
+    q,
+    importance,
+    deadline_from,
+    deadline_to,
+  } = req.query;
   if (!line_user_id)
     return res.status(400).json({ error: "line_user_id required" });
   const conds = ["line_user_id=?"];
@@ -111,10 +120,26 @@ router.get("/tasks", (req, res) => {
     conds.push("status=?");
     args.push(status);
   }
+  if (q && String(q).trim()) {
+    conds.push("title LIKE ?");
+    args.push(`%${String(q).trim()}%`);
+  }
+  if (importance && ["high", "medium", "low"].includes(String(importance))) {
+    conds.push("importance=?");
+    args.push(String(importance));
+  }
+  if (deadline_from) {
+    conds.push("deadline >= ?");
+    args.push(String(deadline_from));
+  }
+  if (deadline_to) {
+    conds.push("deadline <= ?");
+    args.push(String(deadline_to));
+  }
   const where = "WHERE " + conds.join(" AND ");
   const lim = Math.min(Math.max(parseInt(limit || 200, 10) || 200, 1), 1000);
   db.all(
-    `SELECT id,title,deadline,status,project_id,type,progress,importance FROM tasks ${where} ORDER BY CASE WHEN deadline IS NULL THEN 1 ELSE 0 END, deadline ASC LIMIT ?`,
+    `SELECT id,title,deadline,status,project_id,type,progress,importance,sort_order,repeat FROM tasks ${where} ORDER BY CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END, sort_order ASC, CASE WHEN deadline IS NULL THEN 1 ELSE 0 END, deadline ASC LIMIT ?`,
     [...args, lim],
     (e, rows) => {
       if (e) return res.status(500).json({ error: "db", detail: String(e) });
@@ -141,7 +166,7 @@ router.get("/tasks", (req, res) => {
 });
 
 router.post("/tasks", (req, res) => {
-  const { line_user_id, title, deadline, project_id, importance } =
+  const { line_user_id, title, deadline, project_id, importance, repeat } =
     req.body || {};
   if (!line_user_id || !title)
     return res.status(400).json({ error: "line_user_id and title required" });
@@ -151,9 +176,10 @@ router.post("/tasks", (req, res) => {
     if (["high", "medium", "low"].includes(v)) imp = v;
     else return res.status(400).json({ error: "invalid importance" });
   }
+  const rep = repeat ? String(repeat) : null;
   db.run(
-    "INSERT INTO tasks(line_user_id,title,deadline,project_id,importance) VALUES (?,?,?,?,?)",
-    [line_user_id, title, deadline || null, project_id || null, imp],
+    "INSERT INTO tasks(line_user_id,title,deadline,project_id,importance,repeat) VALUES (?,?,?,?,?,?)",
+    [line_user_id, title, deadline || null, project_id || null, imp, rep],
     function (err) {
       if (err)
         return res.status(500).json({ error: "db", detail: String(err) });
@@ -164,7 +190,7 @@ router.post("/tasks", (req, res) => {
 
 router.patch("/tasks/:id", (req, res) => {
   const { id } = req.params;
-  const { title, deadline, project_id, importance, status } = req.body || {};
+  const { title, deadline, project_id, importance, status, repeat, sort_order } = req.body || {};
 
   const sets = [];
   const args = [];
@@ -200,6 +226,16 @@ router.patch("/tasks/:id", (req, res) => {
     sets.push("importance=?");
     args.push(imp);
   }
+  if (typeof repeat !== "undefined") {
+    const rep = repeat ? String(repeat) : null;
+    sets.push("repeat=?");
+    args.push(rep);
+  }
+  if (typeof sort_order !== "undefined") {
+    const so = Number.isFinite(Number(sort_order)) ? Number(sort_order) : null;
+    sets.push("sort_order=?");
+    args.push(so);
+  }
   if (typeof status !== "undefined") {
     const s = String(status);
     if (!["pending", "done", "failed"].includes(s))
@@ -217,7 +253,91 @@ router.patch("/tasks/:id", (req, res) => {
   )}, updated_at=datetime('now','localtime') WHERE id=?`;
   db.run(sql, [...args, id], function (err) {
     if (err) return res.status(500).json({ error: "db", detail: String(err) });
-    res.json({ updated: this?.changes || 0 });
+    const updated = this?.changes || 0;
+    // If marked done and task has repeat and deadline, create next occurrence
+    if (updated && typeof status !== "undefined" && String(status) === "done") {
+      db.get(
+        "SELECT line_user_id,title,deadline,project_id,importance,repeat FROM tasks WHERE id=?",
+        [id],
+        (gErr, row) => {
+          if (gErr || !row) return res.json({ updated });
+          const rep = row.repeat ? String(row.repeat) : null;
+          if (!rep || !row.deadline) return res.json({ updated });
+          const next = calcNextDeadline(row.deadline, rep);
+          if (!next) return res.json({ updated });
+          db.run(
+            "INSERT INTO tasks(line_user_id,title,deadline,project_id,importance,repeat) VALUES (?,?,?,?,?,?)",
+            [
+              row.line_user_id,
+              row.title,
+              next,
+              row.project_id || null,
+              row.importance || null,
+              rep,
+            ],
+            () => res.json({ updated, repeated: true })
+          );
+        }
+      );
+    } else {
+      res.json({ updated });
+    }
+  });
+});
+
+function calcNextDeadline(deadline, rep) {
+  // deadline: "YYYY-MM-DD HH:mm"
+  const iso = deadline.replace(" ", "T");
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  const copy = new Date(d.getTime());
+  const pad = (n) => String(n).padStart(2, "0");
+  const toStr = (dt) =>
+    `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())} ${pad(
+      dt.getHours()
+    )}:${pad(dt.getMinutes())}`;
+  switch (rep) {
+    case "daily":
+      copy.setDate(copy.getDate() + 1);
+      return toStr(copy);
+    case "weekdays": {
+      // next business day (Mon-Fri)
+      do {
+        copy.setDate(copy.getDate() + 1);
+      } while ([0, 6].includes(copy.getDay()));
+      return toStr(copy);
+    }
+    case "weekly":
+      copy.setDate(copy.getDate() + 7);
+      return toStr(copy);
+    case "monthly":
+      copy.setMonth(copy.getMonth() + 1);
+      return toStr(copy);
+    default:
+      return null;
+  }
+}
+
+// Reorder tasks within a status column
+router.post("/tasks/reorder", (req, res) => {
+  const { line_user_id, status, orderedIds } = req.body || {};
+  if (!line_user_id || !status || !Array.isArray(orderedIds))
+    return res.status(400).json({ error: "line_user_id, status, orderedIds required" });
+  if (!["pending", "done", "failed"].includes(String(status)))
+    return res.status(400).json({ error: "invalid status" });
+  const updates = orderedIds.map((id, idx) => ({ id: Number(id), so: idx + 1 }));
+  const stmt = db.prepare("UPDATE tasks SET sort_order=? WHERE id=? AND line_user_id=? AND status=?");
+  db.run("BEGIN");
+  for (const u of updates) stmt.run([u.so, u.id, line_user_id, status]);
+  stmt.finalize((e) => {
+    if (e) {
+      try { db.run("ROLLBACK"); } catch {}
+      return res.status(500).json({ error: "db", detail: String(e) });
+    }
+    db.run("COMMIT", (e2) => {
+      if (e2) return res.status(500).json({ error: "db", detail: String(e2) });
+      res.json({ updated: updates.length });
+    });
   });
 });
 

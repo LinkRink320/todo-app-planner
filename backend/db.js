@@ -47,6 +47,10 @@ db.serialize(() => {
       alters.push("ALTER TABLE tasks ADD COLUMN project_id INTEGER");
     if (!names.has("importance"))
       alters.push("ALTER TABLE tasks ADD COLUMN importance TEXT");
+    if (!names.has("sort_order"))
+      alters.push("ALTER TABLE tasks ADD COLUMN sort_order INTEGER");
+    if (!names.has("repeat"))
+      alters.push("ALTER TABLE tasks ADD COLUMN repeat TEXT");
 
     // If deadline column is NOT NULL, migrate to allow NULL (optional deadline)
     const deadlineCol = (cols || []).find((c) => c.name === "deadline");
@@ -99,6 +103,9 @@ db.serialize(() => {
       );
       db.run(
         "CREATE INDEX IF NOT EXISTS idx_tasks_user_importance ON tasks(line_user_id, importance)"
+      );
+      db.run(
+        "CREATE INDEX IF NOT EXISTS idx_tasks_user_status_sort ON tasks(line_user_id, status, sort_order)"
       );
     });
   });
