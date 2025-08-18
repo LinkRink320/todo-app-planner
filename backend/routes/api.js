@@ -86,7 +86,7 @@ router.get("/projects", (req, res) => {
   if (!line_user_id)
     return res.status(400).json({ error: "line_user_id required" });
   db.all(
-  "SELECT id,name,status,goal,description,created_at,updated_at FROM projects WHERE line_user_id=? AND status='active' ORDER BY id DESC",
+    "SELECT id,name,status,goal,description,created_at,updated_at FROM projects WHERE line_user_id=? AND status='active' ORDER BY id DESC",
     [line_user_id],
     (e, rows) => {
       if (e) return res.status(500).json({ error: "db", detail: String(e) });
@@ -108,6 +108,44 @@ router.post("/projects", (req, res) => {
       res.json({ id: this?.lastID, name });
     }
   );
+});
+
+// Update project (name, goal, description, status)
+router.patch("/projects/:id", (req, res) => {
+  const { id } = req.params;
+  const { name, goal, description, status } = req.body || {};
+  const sets = [];
+  const args = [];
+  if (typeof name !== "undefined") {
+    if (!String(name).trim())
+      return res.status(400).json({ error: "name cannot be empty" });
+    sets.push("name=?");
+    args.push(String(name));
+  }
+  if (typeof goal !== "undefined") {
+    sets.push("goal=?");
+    args.push(goal ? String(goal) : null);
+  }
+  if (typeof description !== "undefined") {
+    sets.push("description=?");
+    args.push(description ? String(description) : null);
+  }
+  if (typeof status !== "undefined") {
+    const s = String(status);
+    if (!["active", "archived"].includes(s))
+      return res.status(400).json({ error: "invalid status" });
+    sets.push("status=?");
+    args.push(s);
+  }
+  if (!sets.length)
+    return res.status(400).json({ error: "no fields to update" });
+  const sql = `UPDATE projects SET ${sets.join(
+    ", "
+  )}, updated_at=datetime('now','localtime') WHERE id=?`;
+  db.run(sql, [...args, id], function (err) {
+    if (err) return res.status(500).json({ error: "db", detail: String(err) });
+    res.json({ updated: this?.changes || 0 });
+  });
 });
 
 router.get("/tasks", (req, res) => {
@@ -211,9 +249,9 @@ router.post("/tasks", (req, res) => {
     importance,
     repeat,
     estimated_minutes,
-  soft_deadline,
-  url,
-  details_md,
+    soft_deadline,
+    url,
+    details_md,
   } = req.body || {};
   if (!line_user_id || !title)
     return res.status(400).json({ error: "line_user_id and title required" });
@@ -260,9 +298,9 @@ router.patch("/tasks/:id", (req, res) => {
     status,
     repeat,
     sort_order,
-  estimated_minutes,
-  url,
-  details_md,
+    estimated_minutes,
+    url,
+    details_md,
   } = req.body || {};
 
   const sets = [];
@@ -350,7 +388,7 @@ router.patch("/tasks/:id", (req, res) => {
     // If marked done and task has repeat and deadline, create next occurrence
     if (updated && typeof status !== "undefined" && String(status) === "done") {
       db.get(
-  "SELECT line_user_id,title,deadline,soft_deadline,project_id,importance,repeat,estimated_minutes,url,details_md FROM tasks WHERE id=?",
+        "SELECT line_user_id,title,deadline,soft_deadline,project_id,importance,repeat,estimated_minutes,url,details_md FROM tasks WHERE id=?",
         [id],
         (gErr, row) => {
           if (gErr || !row) return res.json({ updated });
@@ -653,7 +691,7 @@ router.get("/todos", (req, res) => {
   const { task_id } = req.query || {};
   if (!task_id) return res.status(400).json({ error: "task_id required" });
   db.all(
-  "SELECT id,task_id,title,done,estimated_minutes,url,details_md,sort_order,created_at,updated_at FROM todos WHERE task_id=? ORDER BY CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END, sort_order, id",
+    "SELECT id,task_id,title,done,estimated_minutes,url,details_md,sort_order,created_at,updated_at FROM todos WHERE task_id=? ORDER BY CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END, sort_order, id",
     [Number(task_id)],
     (e, rows) => {
       if (e) return res.status(500).json({ error: "db", detail: String(e) });

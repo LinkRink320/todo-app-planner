@@ -4,6 +4,25 @@ import Calendar from "../components/Calendar.jsx";
 import Week from "../components/Week.jsx";
 import Todos from "../components/Todos.jsx";
 import Plan from "../components/Plan.jsx";
+// very light markdown to HTML (bold, italics, links, line breaks) — safe as innerText via dangerouslySetInnerHTML only after naive sanitization
+function mdToHtml(md) {
+  if (!md) return "";
+  let s = String(md);
+  // escape basic HTML
+  s = s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  // links [text](url)
+  s = s.replace(
+    /\[([^\]]+)\]\((https?:[^\)]+)\)/g,
+    '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>'
+  );
+  // bold **text**
+  s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  // italics *text*
+  s = s.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+  // line breaks
+  s = s.replace(/\n/g, "<br/>");
+  return s;
+}
 
 function getSession(k) {
   try {
@@ -53,12 +72,28 @@ export default function App() {
     url: "",
     details_md: "",
   });
+  const [projEditing, setProjEditing] = useState(false);
+  const [projEditVals, setProjEditVals] = useState({
+    name: "",
+    goal: "",
+    description: "",
+  });
 
   const currentProject = useMemo(() => {
     return typeof pid === "number"
       ? projects.find((p) => Number(p.id) === Number(pid)) || null
       : null;
   }, [projects, pid]);
+
+  useEffect(() => {
+    if (currentProject) {
+      setProjEditVals({
+        name: currentProject.name || "",
+        goal: currentProject.goal || "",
+        description: currentProject.description || "",
+      });
+    }
+  }, [currentProject?.id]);
 
   const isMobile = useMemo(() => {
     if (typeof window === "undefined") return false;
@@ -294,6 +329,25 @@ export default function App() {
     setEditingId(null);
     loadTasks();
   }
+  async function saveProjectEdit() {
+    if (!currentProject) return;
+    try {
+      const r = await fetch(`/api/projects/${currentProject.id}`, {
+        method: "PATCH",
+        headers: await h(),
+        body: JSON.stringify({
+          name: projEditVals.name,
+          goal: projEditVals.goal,
+          description: projEditVals.description,
+        }),
+      });
+      if (!r.ok) return showErr(`update project ${r.status}`);
+      setProjEditing(false);
+      await loadProjects();
+    } catch (e) {
+      showErr(e);
+    }
+  }
 
   if (loading) return <div style={{ padding: 24 }}>Loading…</div>;
   if (!api || !uid) {
@@ -345,7 +399,11 @@ export default function App() {
               {projects.map((p) => (
                 <li
                   key={p.id}
-                  className={Number(pid) === Number(p.id) ? "active clickable" : "clickable"}
+                  className={
+                    Number(pid) === Number(p.id)
+                      ? "active clickable"
+                      : "clickable"
+                  }
                   onClick={() => setPid(p.id)}
                   style={{
                     display: "flex",
@@ -357,7 +415,11 @@ export default function App() {
                   }}
                   title={p.goal ? `目標: ${p.goal}` : p.name}
                 >
-                  <div style={{ fontWeight: Number(pid) === Number(p.id) ? 700 : 500 }}>
+                  <div
+                    style={{
+                      fontWeight: Number(pid) === Number(p.id) ? 700 : 500,
+                    }}
+                  >
                     {p.name}
                   </div>
                   <span style={{ color: "#999", fontSize: 12 }}>
@@ -395,7 +457,6 @@ export default function App() {
                 onChange={(e) => setPdesc(e.target.value)}
               />
             </div>
-            
           </aside>
         )}
         <main className="panel">
@@ -428,6 +489,105 @@ export default function App() {
               <div style={{ color: "#777" }}>期限は YYYY-MM-DD HH:mm</div>
             </div>
             <div>
+              {currentProject && (
+                <div className="panel" style={{ marginTop: 8 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
+                  >
+                    <div style={{ fontWeight: 600 }}>プロジェクト情報</div>
+                    {!projEditing ? (
+                      <button
+                        className="ghost"
+                        onClick={() => setProjEditing(true)}
+                      >
+                        編集
+                      </button>
+                    ) : (
+                      <div className="row stack-sm">
+                        <button onClick={saveProjectEdit}>保存</button>
+                        <button
+                          className="ghost"
+                          onClick={() => setProjEditing(false)}
+                        >
+                          キャンセル
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  {!projEditing ? (
+                    <div style={{ marginTop: 6 }}>
+                      <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                        {currentProject.name}
+                      </div>
+                      {currentProject.goal ? (
+                        <div style={{ marginBottom: 8 }}>
+                          目標: {currentProject.goal}
+                        </div>
+                      ) : (
+                        <div style={{ marginBottom: 8, color: "#999" }}>
+                          目標は未設定です
+                        </div>
+                      )}
+                      {currentProject.description ? (
+                        <div
+                          className="markdown"
+                          dangerouslySetInnerHTML={{
+                            __html: mdToHtml(currentProject.description),
+                          }}
+                        />
+                      ) : (
+                        <div style={{ color: "#999" }}>説明は未設定です</div>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: 6 }}>
+                      <div className="grid-2" style={{ marginBottom: 6 }}>
+                        <input
+                          placeholder="プロジェクト名"
+                          value={projEditVals.name}
+                          onChange={(e) =>
+                            setProjEditVals({
+                              ...projEditVals,
+                              name: e.target.value,
+                            })
+                          }
+                        />
+                        <span />
+                      </div>
+                      <div className="grid-2" style={{ marginBottom: 6 }}>
+                        <input
+                          placeholder="目標(任意)"
+                          value={projEditVals.goal}
+                          onChange={(e) =>
+                            setProjEditVals({
+                              ...projEditVals,
+                              goal: e.target.value,
+                            })
+                          }
+                        />
+                        <span />
+                      </div>
+                      <div>
+                        <textarea
+                          rows={4}
+                          placeholder="説明(マークダウン可) 任意"
+                          value={projEditVals.description}
+                          onChange={(e) =>
+                            setProjEditVals({
+                              ...projEditVals,
+                              description: e.target.value,
+                            })
+                          }
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="row" style={{ justifyContent: "flex-end" }}>
                 <button
                   className={view === "list" ? "ghost" : ""}
@@ -502,6 +662,26 @@ export default function App() {
               onChange={(e) => setTimportance(e.target.value)}
             >
               <option value="">重要度(任意)</option>
+              {(t.url || t.details_md) && (
+                <div style={{ marginTop: 6 }}>
+                  {t.url && (
+                    <div>
+                      <a href={t.url} target="_blank" rel="noopener noreferrer">
+                        🔗 {t.url}
+                      </a>
+                    </div>
+                  )}
+                  {t.details_md && (
+                    <div
+                      className="markdown"
+                      style={{ color: "#444", fontSize: 14, marginTop: 4 }}
+                      dangerouslySetInnerHTML={{
+                        __html: mdToHtml(t.details_md),
+                      }}
+                    />
+                  )}
+                </div>
+              )}
               <option value="high">高</option>
               <option value="medium">中</option>
               <option value="low">低</option>
