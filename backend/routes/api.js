@@ -354,4 +354,66 @@ router.get("/line-profile", async (req, res) => {
   }
 });
 
+// Saved Views CRUD
+router.get("/views", (req, res) => {
+  const { line_user_id } = req.query;
+  if (!line_user_id) return res.status(400).json({ error: "line_user_id required" });
+  db.all(
+    "SELECT id,name,payload,created_at,updated_at FROM saved_views WHERE line_user_id=? ORDER BY id DESC",
+    [line_user_id],
+    (e, rows) => {
+      if (e) return res.status(500).json({ error: "db", detail: String(e) });
+      res.json((rows || []).map((r) => ({ ...r, payload: safeParse(r.payload) })));
+    }
+  );
+});
+
+router.post("/views", (req, res) => {
+  const { line_user_id, name, payload } = req.body || {};
+  if (!line_user_id || !name) return res.status(400).json({ error: "line_user_id and name required" });
+  const json = JSON.stringify(payload || {});
+  db.run(
+    "INSERT INTO saved_views(line_user_id,name,payload) VALUES (?,?,?)",
+    [line_user_id, name, json],
+    function (err) {
+      if (err) return res.status(500).json({ error: "db", detail: String(err) });
+      res.json({ id: this?.lastID });
+    }
+  );
+});
+
+router.patch("/views/:id", (req, res) => {
+  const { id } = req.params;
+  const { name, payload } = req.body || {};
+  const sets = [];
+  const args = [];
+  if (typeof name !== "undefined") {
+    if (!String(name).trim()) return res.status(400).json({ error: "name cannot be empty" });
+    sets.push("name=?");
+    args.push(String(name));
+  }
+  if (typeof payload !== "undefined") {
+    sets.push("payload=?");
+    args.push(JSON.stringify(payload || {}));
+  }
+  if (!sets.length) return res.status(400).json({ error: "no fields to update" });
+  const sql = `UPDATE saved_views SET ${sets.join(", ")}, updated_at=datetime('now','localtime') WHERE id=?`;
+  db.run(sql, [...args, id], function (err) {
+    if (err) return res.status(500).json({ error: "db", detail: String(err) });
+    res.json({ updated: this?.changes || 0 });
+  });
+});
+
+router.delete("/views/:id", (req, res) => {
+  const { id } = req.params;
+  db.run("DELETE FROM saved_views WHERE id=?", [id], function (err) {
+    if (err) return res.status(500).json({ error: "db", detail: String(err) });
+    res.json({ deleted: this?.changes || 0 });
+  });
+});
+
+function safeParse(s) {
+  try { return JSON.parse(s); } catch { return {}; }
+}
+
 module.exports = router;

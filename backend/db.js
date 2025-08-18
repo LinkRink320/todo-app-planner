@@ -129,6 +129,19 @@ db.serialize(() => {
     "CREATE INDEX IF NOT EXISTS idx_projects_user ON projects(line_user_id)"
   );
 
+  // Saved composite views (filters/layout presets)
+  db.run(`CREATE TABLE IF NOT EXISTS saved_views(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    line_user_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    updated_at TEXT
+  )`);
+  db.run(
+    "CREATE INDEX IF NOT EXISTS idx_views_user_name ON saved_views(line_user_id, name)"
+  );
+
   db.run(`CREATE TABLE IF NOT EXISTS logs(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     line_user_id TEXT NOT NULL,

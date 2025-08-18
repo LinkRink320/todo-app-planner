@@ -29,6 +29,8 @@ export default function App() {
   const [trepeat, setTrepeat] = useState("");
   const [q, setQ] = useState("");
   const [fImportance, setFImportance] = useState("");
+  const [views, setViews] = useState([]);
+  const [viewName, setViewName] = useState("");
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
@@ -67,6 +69,9 @@ export default function App() {
   useEffect(() => {
     if (api && uid) loadTasks();
   }, [api, uid, pid, status, view]);
+  useEffect(() => {
+    if (api && uid) loadViews();
+  }, [api, uid]);
 
   async function h() {
     return { "x-api-key": api, "Content-Type": "application/json" };
@@ -113,6 +118,39 @@ export default function App() {
     setPname("");
     loadProjects();
     showMsg("プロジェクトを追加しました");
+  }
+  async function loadViews() {
+    const r = await fetch(`/api/views?line_user_id=${encodeURIComponent(uid)}`, { headers: await h() });
+    if (!r.ok) return; // silent
+    setViews(await r.json());
+  }
+  async function saveCurrentView() {
+    if (!viewName.trim()) return showErr("ビュー名を入力してください");
+    const payload = {
+      pid,
+      viewMode: view,
+      status,
+      q,
+      importance: fImportance,
+    };
+    const r = await fetch(`/api/views`, {
+      method: "POST",
+      headers: await h(),
+      body: JSON.stringify({ line_user_id: uid, name: viewName.trim(), payload }),
+    });
+    if (!r.ok) return showErr(`save view ${r.status}`);
+    setViewName("");
+    loadViews();
+    showMsg("ビューを保存しました");
+  }
+  function applyViewPayload(p) {
+    if (!p) return;
+    if (typeof p.pid !== "undefined") setPid(p.pid);
+    if (p.viewMode) setView(p.viewMode);
+    if (p.status) setStatus(p.status);
+    setQ(p.q || "");
+    setFImportance(p.importance || "");
+    // tasks will reload via effects
   }
   async function loadTasks() {
     if (!uid) return;
@@ -360,6 +398,19 @@ export default function App() {
               <option value="low">低</option>
             </select>
           </div>
+          <div className="grid-2" style={{ marginTop: 8 }}>
+            <input placeholder="保存名 (複合ビュー)" value={viewName} onChange={(e) => setViewName(e.target.value)} />
+            <button onClick={saveCurrentView}>保存</button>
+          </div>
+          {views.length > 0 && (
+            <div className="row stack-sm" style={{ marginTop: 8, flexWrap: 'wrap' }}>
+              {views.map((v) => (
+                <button key={v.id} className="ghost" onClick={() => applyViewPayload(v.payload)}>
+                  {v.name}
+                </button>
+              ))}
+            </div>
+          )}
           {view === "list" ? (
             <ul className="list" style={{ marginTop: 12 }}>
               {tasks.length === 0 ? (
