@@ -3,9 +3,49 @@ const { middleware, Client } = require("@line/bot-sdk");
 const db = require("../db");
 const { env, line } = require("../config");
 const { parse } = require("../commands");
+const { URLSearchParams } = require("url");
 
 const router = express.Router();
 const client = new Client(line);
+
+function appBaseFromReq(req) {
+  const host = req.headers["x-forwarded-host"] || req.headers.host;
+  const proto = (req.headers["x-forwarded-proto"] || "https").split(
+    ","
+  )[0];
+  return env.PUBLIC_APP_URL || (host ? `${proto}://${host}` : null);
+}
+
+function quickReplyDefaults() {
+  return {
+    items: [
+      {
+        type: "action",
+        action: { type: "message", label: "未完了", text: "ls" },
+      },
+      {
+        type: "action",
+        action: { type: "message", label: "長期", text: "lsl" },
+      },
+      {
+        type: "action",
+        action: { type: "message", label: "URL", text: "url" },
+      },
+      {
+        type: "action",
+        action: { type: "message", label: "MyID", text: "whoami" },
+      },
+    ],
+  };
+}
+
+async function replyTextWithQuick(client, replyToken, text) {
+  return client.replyMessage(replyToken, {
+    type: "text",
+    text,
+    quickReply: quickReplyDefaults(),
+  });
+}
 
 router.post("/webhook", middleware(line), async (req, res) => {
   const events = req.body.events || [];
@@ -15,28 +55,67 @@ router.post("/webhook", middleware(line), async (req, res) => {
   try {
     await Promise.all(
       events.map(async (e) => {
+        // Postback quick actions (e.g., done?id=123)
+        if (e.type === "postback" && e.postback?.data) {
+          const params = new URLSearchParams(e.postback.data);
+          const action = params.get("action");
+          const u = e.source.userId;
+          if (action === "done") {
+            const id = Number(params.get("id"));
+            if (id) {
+              db.run(
+                'UPDATE tasks SET status="done" WHERE id=? AND line_user_id=?',
+                [id, u]
+              );
+              return replyTextWithQuick(client, e.replyToken, `完了: ${id}`);
+            }
+          }
+          if (action === "open-app") {
+            const base = appBaseFromReq(req);
+            const text = base
+              ? `アプリURL: ${base}`
+              : "アプリURLが未設定です (PUBLIC_APP_URL を設定してください)";
+            return replyTextWithQuick(client, e.replyToken, text);
+          }
+          // Fallback menu
+          return client.replyMessage(e.replyToken, {
+            type: "template",
+            altText: "メニュー",
+            template: {
+              type: "buttons",
+              title: "操作メニュー",
+              text: "よく使う操作を選択",
+              actions: [
+                { type: "message", label: "未完了", text: "ls" },
+                { type: "message", label: "長期", text: "lsl" },
+                { type: "message", label: "MyID", text: "whoami" },
+                {
+                  type: "uri",
+                  label: "アプリ",
+                  uri: appBaseFromReq(req) || "https://example.com",
+                },
+              ],
+            },
+          });
+        }
         if (e.type !== "message" || e.message.type !== "text") return;
         const u = e.source.userId;
         const cmd = parse(e.message.text);
         if (cmd.type === "app_url") {
           // Prefer explicit PUBLIC_APP_URL; fallback to inferring from Host header
-          const host = req.headers["x-forwarded-host"] || req.headers.host;
-          const proto = (req.headers["x-forwarded-proto"] || "https").split(
-            ","
-          )[0];
-          const base =
-            env.PUBLIC_APP_URL || (host ? `${proto}://${host}` : null);
+          const base = appBaseFromReq(req);
           const text = base
             ? `アプリURL: ${base}`
             : "アプリURLが未設定です (PUBLIC_APP_URL を設定してください)";
-          return client.replyMessage(e.replyToken, { type: "text", text });
+          return replyTextWithQuick(client, e.replyToken, text);
         }
 
         if (cmd.type === "whoami") {
-          return client.replyMessage(e.replyToken, {
-            type: "text",
-            text: `あなたのLINE User ID: ${u}\nこのIDを /app に入力すると、同じデータが閲覧できます。`,
-          });
+          return replyTextWithQuick(
+            client,
+            e.replyToken,
+            `あなたのLINE User ID: ${u}\nこのIDを /app に入力すると、同じデータが閲覧できます。`
+          );
         }
 
         if (cmd.type === "watch_here") {
@@ -61,10 +140,11 @@ router.post("/webhook", middleware(line), async (req, res) => {
               resolve
             )
           );
-          return client.replyMessage(e.replyToken, {
-            type: "text",
-            text: "このグループを監視先に登録しました。",
-          });
+          return replyTextWithQuick(
+            client,
+            e.replyToken,
+            "このグループを監視先に登録しました。"
+          );
         }
 
         if (cmd.type === "add") {
@@ -72,10 +152,11 @@ router.post("/webhook", middleware(line), async (req, res) => {
             "INSERT INTO tasks(line_user_id,title,deadline) VALUES (?,?,?)",
             [u, cmd.title, cmd.deadline || null]
           );
-          return client.replyMessage(e.replyToken, {
-            type: "text",
-            text: `登録OK: ${cmd.deadline || "(期限なし)"} ${cmd.title}`,
-          });
+          return replyTextWithQuick(
+            client,
+            e.replyToken,
+            `登録OK: ${cmd.deadline || "(期限なし)"} ${cmd.title}`
+          );
         }
 
         if (cmd.type === "project_add") {
@@ -84,10 +165,11 @@ router.post("/webhook", middleware(line), async (req, res) => {
             [u, cmd.name],
             function () {
               const id = this?.lastID;
-              client.replyMessage(e.replyToken, {
-                type: "text",
-                text: `P追加OK: ${id}: ${cmd.name}`,
-              });
+              replyTextWithQuick(
+                client,
+                e.replyToken,
+                `P追加OK: ${id}: ${cmd.name}`
+              );
             }
           );
           return;
@@ -103,7 +185,7 @@ router.post("/webhook", middleware(line), async (req, res) => {
                 : rows?.length
                 ? rows.map((r) => `${r.id}: ${r.name}`).join("\n")
                 : "プロジェクトなし";
-              client.replyMessage(e.replyToken, { type: "text", text });
+              replyTextWithQuick(client, e.replyToken, text);
             }
           );
           return;
@@ -123,12 +205,13 @@ router.post("/webhook", middleware(line), async (req, res) => {
                 "INSERT INTO tasks(line_user_id,title,deadline,project_id) VALUES (?,?,?,?)",
                 [u, cmd.title, cmd.deadline || null, cmd.projectId]
               );
-              client.replyMessage(e.replyToken, {
-                type: "text",
-                text: `P${cmd.projectId} に登録OK: ${
+              replyTextWithQuick(
+                client,
+                e.replyToken,
+                `P${cmd.projectId} に登録OK: ${
                   cmd.deadline || "(期限なし)"
-                } ${cmd.title}`,
-              });
+                } ${cmd.title}`
+              );
             }
           );
           return;
@@ -165,7 +248,7 @@ router.post("/webhook", middleware(line), async (req, res) => {
                     })
                     .join("\n")
                 : "未達タスクなし";
-              client.replyMessage(e.replyToken, { type: "text", text });
+              replyTextWithQuick(client, e.replyToken, text);
             }
           );
           return;
@@ -176,10 +259,11 @@ router.post("/webhook", middleware(line), async (req, res) => {
             "INSERT INTO tasks(line_user_id,title,deadline,type,progress,last_progress_at) VALUES (?,?,?,?,?,datetime('now','localtime'))",
             [u, cmd.title, cmd.deadline || null, "long", 0]
           );
-          return client.replyMessage(e.replyToken, {
-            type: "text",
-            text: `長期 追加OK: ${cmd.deadline || "(期限なし)"} ${cmd.title}`,
-          });
+          return replyTextWithQuick(
+            client,
+            e.replyToken,
+            `長期 追加OK: ${cmd.deadline || "(期限なし)"} ${cmd.title}`
+          );
         }
 
         if (cmd.type === "list") {
@@ -213,7 +297,7 @@ router.post("/webhook", middleware(line), async (req, res) => {
                     })
                     .join("\n")
                 : "未達タスクなし";
-              client.replyMessage(e.replyToken, { type: "text", text });
+              replyTextWithQuick(client, e.replyToken, text);
             }
           );
           return;
@@ -244,10 +328,7 @@ router.post("/webhook", middleware(line), async (req, res) => {
             'UPDATE tasks SET status="done" WHERE id=? AND line_user_id=?',
             [cmd.id, u]
           );
-          return client.replyMessage(e.replyToken, {
-            type: "text",
-            text: `完了: ${cmd.id}`,
-          });
+          return replyTextWithQuick(client, e.replyToken, `完了: ${cmd.id}`);
         }
 
         if (cmd.type === "progress") {
@@ -255,22 +336,33 @@ router.post("/webhook", middleware(line), async (req, res) => {
             "UPDATE tasks SET progress=?, updated_at=datetime('now','localtime'), last_progress_at=datetime('now','localtime') WHERE id=? AND line_user_id=? AND type='long'",
             [cmd.progress, cmd.id, u]
           );
-          return client.replyMessage(e.replyToken, {
-            type: "text",
-            text: `進捗更新: ${cmd.id} → ${cmd.progress}%`,
-          });
+          return replyTextWithQuick(
+            client,
+            e.replyToken,
+            `進捗更新: ${cmd.id} → ${cmd.progress}%`
+          );
         }
 
         if (cmd.type === "error") {
-          return client.replyMessage(e.replyToken, {
-            type: "text",
-            text: cmd.msg,
-          });
+          return replyTextWithQuick(client, e.replyToken, cmd.msg);
         }
 
+        // Fallback: show a buttons menu for easier discovery
+        const base = appBaseFromReq(req) || "";
         return client.replyMessage(e.replyToken, {
-          type: "text",
-          text: "使い方: whoami(=myid/id) / URL / add [YYYY-MM-DD HH:mm] タイトル / ls / done {id} / watch here(グループで) / addl [YYYY-MM-DD HH:mm] タイトル / lsl / prog {id} {0-100%} / padd 名称 / pls / addp {pid} [YYYY-MM-DD HH:mm] タイトル / lsp {pid}",
+          type: "template",
+          altText: "メニュー: よく使う操作",
+          template: {
+            type: "buttons",
+            title: "操作メニュー",
+            text: "ボタンから選べます",
+            actions: [
+              { type: "message", label: "未完了", text: "ls" },
+              { type: "message", label: "長期", text: "lsl" },
+              { type: "message", label: "MyID", text: "whoami" },
+              { type: "uri", label: "アプリ", uri: base || "https://example.com" },
+            ],
+          },
         });
       })
     );
