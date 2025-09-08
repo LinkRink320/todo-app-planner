@@ -370,9 +370,20 @@ cron.schedule(MORNING_DELETE_CONFIRM_CRON, async () => {
             type: "template",
             altText: `昨日の未達: ${t.title}`,
             template: {
-              type: "confirm",
-              text: `昨日未達:『${t.title}』\n削除しますか？`,
+              type: "buttons",
+              title: "昨日の未達",
+              text: `『${t.title}』どうしますか？`,
               actions: [
+                {
+                  type: "postback",
+                  label: "延期: 明日9時",
+                  data: `action=postpone-task&id=${t.id}&preset=tomorrow09`,
+                },
+                {
+                  type: "postback",
+                  label: "延期: 次平日9時",
+                  data: `action=postpone-task&id=${t.id}&preset=nextweekday09`,
+                },
                 {
                   type: "postback",
                   label: "削除する",

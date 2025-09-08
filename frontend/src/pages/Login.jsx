@@ -25,8 +25,12 @@ export default function Login() {
       try {
         const r = await fetch("/api/config");
         if (r.ok) {
-          const c = await r.json();
-          if (!uid && c.defaultLineUserId) setUid(c.defaultLineUserId);
+          const ct = r.headers.get("content-type") || "";
+          const text = await r.text();
+          if (ct.includes("application/json")) {
+            const c = JSON.parse(text);
+            if (!uid && c.defaultLineUserId) setUid(c.defaultLineUserId);
+          }
         }
       } catch {}
       setLoading(false);

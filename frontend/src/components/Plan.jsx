@@ -37,7 +37,13 @@ export default function Plan({ userId, getHeaders }) {
       `/api/plans?line_user_id=${encodeURIComponent(userId)}&date=${date}`,
       { headers: await getHeaders() }
     );
-    if (r.ok) setPlan(await r.json());
+    if (r.ok) {
+      try {
+        const ct = r.headers.get("content-type") || "";
+        const text = await r.text();
+        if (ct.includes("application/json")) setPlan(JSON.parse(text));
+      } catch {}
+    }
   }
 
   async function loadTasks() {
@@ -46,7 +52,16 @@ export default function Plan({ userId, getHeaders }) {
     const r = await fetch(`/api/tasks?${qs.toString()}`, {
       headers: await getHeaders(),
     });
-    if (r.ok) setTasks(await r.json());
+    if (r.ok) {
+      try {
+        const ct = r.headers.get("content-type") || "";
+        const text = await r.text();
+        if (ct.includes("application/json")) {
+          const data = JSON.parse(text);
+          setTasks(Array.isArray(data) ? data : []);
+        }
+      } catch {}
+    }
   }
 
   async function loadTodos() {
@@ -54,7 +69,16 @@ export default function Plan({ userId, getHeaders }) {
     const r = await fetch(`/api/todos/by-user?${qs.toString()}`, {
       headers: await getHeaders(),
     });
-    if (r.ok) setTodos(await r.json());
+    if (r.ok) {
+      try {
+        const ct = r.headers.get("content-type") || "";
+        const text = await r.text();
+        if (ct.includes("application/json")) {
+          const data = JSON.parse(text);
+          setTodos(Array.isArray(data) ? data : []);
+        }
+      } catch {}
+    }
   }
 
   async function addTask(taskId, opts = {}) {

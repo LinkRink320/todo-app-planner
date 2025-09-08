@@ -4,6 +4,7 @@ import Calendar from "../components/Calendar.jsx";
 import Week from "../components/Week.jsx";
 import Todos from "../components/Todos.jsx";
 import Plan from "../components/Plan.jsx";
+import ProjectAnalytics from "../components/ProjectAnalytics.jsx";
 // very light markdown to HTML (bold, italics, links, line breaks) — safe as innerText via dangerouslySetInnerHTML only after naive sanitization
 function mdToHtml(md) {
   if (md == null) return "";
@@ -47,7 +48,7 @@ export default function App() {
   const [pid, setPid] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [status, setStatus] = useState(getSession("TASK_STATUS") || "all");
-  const [view, setView] = useState(getSession("VIEW_MODE") || "list"); // list | board | calendar | week | plan
+  const [view, setView] = useState(getSession("VIEW_MODE") || "list"); // list | board | calendar | week | plan | analytics
   const [pname, setPname] = useState("");
   const [pgoal, setPgoal] = useState("");
   const [pdesc, setPdesc] = useState("");
@@ -146,8 +147,12 @@ export default function App() {
     try {
       const r = await fetch("/api/config");
       if (r.ok) {
-        const c = await r.json();
-        if (!uid && c.defaultLineUserId) setUid(c.defaultLineUserId);
+        const ct = r.headers.get("content-type") || "";
+        const text = await r.text();
+        if (ct.includes("application/json")) {
+          const c = JSON.parse(text);
+          if (!uid && c.defaultLineUserId) setUid(c.defaultLineUserId);
+        }
       }
     } catch {}
     setLoading(false);
@@ -160,7 +165,16 @@ export default function App() {
       { headers: await h() }
     );
     if (!r.ok) return showErr(`projects ${r.status}`);
-    setProjects(await r.json());
+    try {
+      const ct = r.headers.get("content-type") || "";
+      const text = await r.text();
+      if (!ct.includes("application/json"))
+        return showErr(`projects non-JSON ${r.status}`);
+      const data = JSON.parse(text);
+      setProjects(Array.isArray(data) ? data : []);
+    } catch (e) {
+      return showErr(`projects parse error: ${e?.message || e}`);
+    }
   }
   async function createProject() {
     if (!uid) return showErr("LINE User IDを入力してください");
@@ -188,7 +202,13 @@ export default function App() {
       { headers: await h() }
     );
     if (!r.ok) return; // silent
-    setViews(await r.json());
+    try {
+      const ct = r.headers.get("content-type") || "";
+      const text = await r.text();
+      if (!ct.includes("application/json")) return; // silent
+      const data = JSON.parse(text);
+      setViews(Array.isArray(data) ? data : []);
+    } catch {}
   }
   async function saveCurrentView() {
     if (!viewName.trim()) return showErr("ビュー名を入力してください");
@@ -256,7 +276,17 @@ export default function App() {
       headers: await h(),
     });
     if (!r.ok) return showErr(`tasks ${r.status}`);
-    setTasks(await r.json());
+    try {
+      const ct = r.headers.get("content-type") || "";
+      const text = await r.text();
+      if (!ct.includes("application/json")) {
+        return showErr(`tasks non-JSON ${r.status}: ${text.slice(0, 60)}`);
+      }
+      const data = JSON.parse(text);
+      setTasks(Array.isArray(data) ? data : []);
+    } catch (e) {
+      return showErr(`tasks parse error: ${e?.message || e}`);
+    }
   }
   async function createTask() {
     if (!uid) return showErr("LINE User IDを入力してください");
@@ -621,6 +651,12 @@ export default function App() {
                   onClick={() => setView("plan")}
                 >
                   プラン
+                </button>
+                <button
+                  className={view === "analytics" ? "ghost" : ""}
+                  onClick={() => setView("analytics")}
+                >
+                  Analytics
                 </button>
               </div>
               <select
@@ -1095,6 +1131,11 @@ export default function App() {
                   showErr(e);
                 }
               }}
+            />
+          ) : view === "analytics" ? (
+            <ProjectAnalytics
+              projectId={typeof pid === "number" ? pid : null}
+              getHeaders={h}
             />
           ) : (
             <Plan userId={uid} getHeaders={h} />

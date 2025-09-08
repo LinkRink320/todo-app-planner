@@ -148,6 +148,131 @@ router.patch("/projects/:id", (req, res) => {
   });
 });
 
+// --- Project Analytics ---
+// Overview KPIs at current time
+router.get("/projects/:id/overview", (req, res) => {
+  const { id } = req.params;
+  db.all(
+    `SELECT COUNT(*) AS total,
+            SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) AS pending,
+            SUM(CASE WHEN status='done' THEN 1 ELSE 0 END) AS done,
+            SUM(COALESCE(estimated_minutes,0)) AS est_total,
+            SUM(CASE WHEN status='done' THEN COALESCE(estimated_minutes,0) ELSE 0 END) AS est_done
+     FROM tasks WHERE project_id=?`,
+    [id],
+    (e, rows) => {
+      if (e) return res.status(500).json({ error: "db", detail: String(e) });
+      const r = rows && rows[0];
+      const total = Number(r?.total || 0);
+      const estTotal = Number(r?.est_total || 0);
+      const estDone = Number(r?.est_done || 0);
+      // Fallback: if no estimates, use count ratio
+      const pct =
+        estTotal > 0
+          ? Math.round((estDone / estTotal) * 100)
+          : total > 0
+          ? Math.round((Number(r?.done || 0) / total) * 100)
+          : 0;
+      res.json({
+        total,
+        pending: Number(r?.pending || 0),
+        done: Number(r?.done || 0),
+        est_total: estTotal,
+        est_done: estDone,
+        progress_percent: pct,
+      });
+    }
+  );
+});
+
+// Weekly metrics time series for a project
+router.get("/projects/:id/weekly-metrics", (req, res) => {
+  const { id } = req.params;
+  const weeks = Math.min(
+    Math.max(parseInt(req.query.weeks || "12", 10), 1),
+    52
+  );
+  // compute Monday as week start (local time). TZ relies on SQLite localtime
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const toDateStr = (d) =>
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const weekday = now.getDay(); // 0=Sun..6=Sat
+  const monday = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate() - ((weekday + 6) % 7)
+  );
+  const starts = [];
+  for (let i = weeks - 1; i >= 0; i--) {
+    const d = new Date(
+      monday.getFullYear(),
+      monday.getMonth(),
+      monday.getDate() - i * 7
+    );
+    starts.push(toDateStr(d));
+  }
+  const endDates = starts.map((s) => {
+    const d = new Date(s + "T00:00:00");
+    d.setDate(d.getDate() + 7);
+    return toDateStr(d);
+  });
+  // Pre-fetch denominator (project estimates total) once
+  db.get(
+    `SELECT SUM(COALESCE(estimated_minutes,0)) AS est_total, COUNT(*) AS total
+     FROM tasks WHERE project_id=?`,
+    [id],
+    (e0, base) => {
+      if (e0) return res.status(500).json({ error: "db", detail: String(e0) });
+      const estTotal = Number(base?.est_total || 0);
+      const totalCount = Number(base?.total || 0);
+      const placeholders = starts.map(() => "(?, ?, ?)").join(",");
+      const params = [];
+      for (let i = 0; i < starts.length; i++) {
+        params.push(id, starts[i], endDates[i]);
+      }
+      // Aggregate per-week done metrics
+      const sql = `
+        WITH ranges(project_id, start_d, end_d) AS (
+          VALUES ${placeholders}
+        )
+        SELECT r.start_d AS week_start,
+               COUNT(t.id) AS completed_count,
+               SUM(COALESCE(t.estimated_minutes,0)) AS completed_estimated_minutes
+        FROM ranges r
+        LEFT JOIN tasks t ON t.project_id=r.project_id AND t.done_at >= r.start_d AND t.done_at < r.end_d
+        GROUP BY r.start_d
+        ORDER BY r.start_d`;
+      db.all(sql, params, (e1, rows) => {
+        if (e1)
+          return res.status(500).json({ error: "db", detail: String(e1) });
+        // Build cumulative progress percent per week (using estimates if available else count ratio)
+        let cumEstDone = 0;
+        let cumCountDone = 0;
+        const out = (rows || []).map((r) => {
+          const cnt = Number(r.completed_count || 0);
+          const est = Number(r.completed_estimated_minutes || 0);
+          cumEstDone += est;
+          cumCountDone += cnt;
+          const pct =
+            estTotal > 0
+              ? Math.round((cumEstDone / estTotal) * 100)
+              : totalCount > 0
+              ? Math.round((cumCountDone / totalCount) * 100)
+              : 0;
+          return {
+            week_start: r.week_start,
+            completed_count: cnt,
+            completed_estimated_minutes: est,
+            cumulative_progress_percent: pct,
+          };
+        });
+        res.json(out);
+      });
+    }
+  );
+});
+
 router.get("/tasks", (req, res) => {
   const {
     line_user_id,
@@ -373,6 +498,11 @@ router.patch("/tasks/:id", (req, res) => {
       return res.status(400).json({ error: "invalid status" });
     sets.push("status=?");
     args.push(s);
+    if (s === "done") {
+      sets.push("done_at=datetime('now','localtime')");
+    } else {
+      sets.push("done_at=NULL");
+    }
   }
 
   if (!sets.length)

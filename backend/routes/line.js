@@ -136,6 +136,48 @@ router.post("/webhook", middleware(line), async (req, res) => {
               );
             }
           }
+          if (action === "postpone-task") {
+            const id = Number(params.get("id"));
+            const preset = params.get("preset");
+            if (id && preset) {
+              const now = new Date();
+              const pad = (n) => String(n).padStart(2, "0");
+              const fmt = (d, hh = "09", mm = "00") =>
+                `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(
+                  d.getDate()
+                )} ${hh}:${mm}`;
+              const nextWeekday = () => {
+                const d = new Date();
+                do {
+                  d.setDate(d.getDate() + 1);
+                } while ([0, 6].includes(d.getDay()));
+                return d;
+              };
+              let deadline = null;
+              if (preset === "tomorrow09") {
+                const d = new Date(now.getTime());
+                d.setDate(d.getDate() + 1);
+                deadline = fmt(d, "09", "00");
+              } else if (preset === "nextweekday09") {
+                const d = nextWeekday();
+                deadline = fmt(d, "09", "00");
+              }
+              if (deadline) {
+                db.run(
+                  "UPDATE tasks SET deadline=?, status='pending', failed_at=NULL, updated_at=datetime('now','localtime') WHERE id=? AND line_user_id=?",
+                  [deadline, id, u],
+                  function () {
+                    return replyTextWithQuick(
+                      client,
+                      e.replyToken,
+                      `延期しました: ${id} → ${deadline}`
+                    );
+                  }
+                );
+                return;
+              }
+            }
+          }
           if (action === "cancel") {
             return replyTextWithQuick(
               client,
@@ -147,7 +189,7 @@ router.post("/webhook", middleware(line), async (req, res) => {
             const id = Number(params.get("id"));
             if (id) {
               db.run(
-                'UPDATE tasks SET status="done" WHERE id=? AND line_user_id=?',
+                "UPDATE tasks SET status='done', done_at=datetime('now','localtime') WHERE id=? AND line_user_id=?",
                 [id, u]
               );
               return replyTextWithQuick(client, e.replyToken, `完了: ${id}`);

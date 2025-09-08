@@ -26,7 +26,12 @@ export default function Todos({ taskId, getHeaders, onChanged }) {
         headers: await getHeaders(),
       });
       if (!r.ok) throw new Error(`todos ${r.status}`);
-      setTodos(await r.json());
+      const ct = r.headers.get("content-type") || "";
+      const text = await r.text();
+      if (!ct.includes("application/json"))
+        throw new Error(`todos non-JSON ${r.status}`);
+      const data = JSON.parse(text);
+      setTodos(Array.isArray(data) ? data : []);
     } catch (e) {
       setErr(String(e.message || e));
       setTimeout(() => setErr(""), 3000);

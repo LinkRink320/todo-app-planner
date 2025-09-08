@@ -62,6 +62,8 @@ db.serialize(() => {
       alters.push("ALTER TABLE tasks ADD COLUMN details_md TEXT");
     if (!names.has("failed_at"))
       alters.push("ALTER TABLE tasks ADD COLUMN failed_at TEXT");
+    if (!names.has("done_at"))
+      alters.push("ALTER TABLE tasks ADD COLUMN done_at TEXT");
 
     // If deadline column is NOT NULL, migrate to allow NULL (optional deadline)
     const deadlineCol = (cols || []).find((c) => c.name === "deadline");
@@ -123,6 +125,9 @@ db.serialize(() => {
       );
       db.run(
         "CREATE INDEX IF NOT EXISTS idx_tasks_user_soft_deadline ON tasks(line_user_id, soft_deadline)"
+      );
+      db.run(
+        "CREATE INDEX IF NOT EXISTS idx_tasks_project_done_at ON tasks(project_id, done_at)"
       );
     });
   });
