@@ -32,7 +32,9 @@ function mdToHtml(md) {
 
 function getSession(k) {
   try {
-    return window.sessionStorage.getItem(k) || "";
+    return (
+      window.localStorage.getItem(k) || window.sessionStorage.getItem(k) || ""
+    );
   } catch {
     return "";
   }
@@ -476,6 +478,8 @@ export default function App() {
           <button
             onClick={() => {
               try {
+                localStorage.removeItem("API_KEY");
+                localStorage.removeItem("LINE_USER_ID");
                 sessionStorage.removeItem("API_KEY");
                 sessionStorage.removeItem("LINE_USER_ID");
               } catch {}
