@@ -1,24 +1,30 @@
 import React, { useEffect, useState } from "react";
 
-export default function Todos({ taskId, getHeaders, onChanged }) {
+export default function Todos({
+  taskId,
+  getHeaders,
+  onChanged,
+  autoFocusNew,
+  refreshSeq,
+}) {
   const [todos, setTodos] = useState([]);
-  const [newTitle, setNewTitle] = useState("");
-  const [newEst, setNewEst] = useState("");
-  const [newUrl, setNewUrl] = useState("");
-  const [newDetails, setNewDetails] = useState("");
   const [err, setErr] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editVals, setEditVals] = useState({
     title: "",
     estimated_minutes: "",
-    url: "",
-    details_md: "",
+    // url/details removed from inline editor to simplify UI
   });
 
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId]);
+  useEffect(() => {
+    if (refreshSeq != null) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshSeq]);
+  // removed auto-focus behavior as inline add form no longer exists
 
   async function load() {
     try {
@@ -36,29 +42,6 @@ export default function Todos({ taskId, getHeaders, onChanged }) {
       setErr(String(e.message || e));
       setTimeout(() => setErr(""), 3000);
     }
-  }
-
-  async function add() {
-    const title = newTitle.trim();
-    if (!title) return;
-    const r = await fetch("/api/todos", {
-      method: "POST",
-      headers: await getHeaders(),
-      body: JSON.stringify({
-        task_id: taskId,
-        title,
-        estimated_minutes: newEst ? Number(newEst) : null,
-        url: newUrl || null,
-        details_md: newDetails || null,
-      }),
-    });
-    if (!r.ok) return;
-    setNewTitle("");
-    setNewEst("");
-    setNewUrl("");
-    setNewDetails("");
-    await load();
-    onChanged && onChanged();
   }
 
   async function toggle(id, done) {
@@ -88,8 +71,6 @@ export default function Todos({ taskId, getHeaders, onChanged }) {
       title: td.title || "",
       estimated_minutes:
         typeof td.estimated_minutes === "number" ? td.estimated_minutes : "",
-      url: td.url || "",
-      details_md: td.details_md || "",
     });
   }
 
@@ -100,8 +81,7 @@ export default function Todos({ taskId, getHeaders, onChanged }) {
         editVals.estimated_minutes === "" || editVals.estimated_minutes == null
           ? null
           : Number(editVals.estimated_minutes),
-      url: editVals.url || null,
-      details_md: editVals.details_md || null,
+      // url/details not editable inline; do not send/overwrite them
     };
     const r = await fetch(`/api/todos/${id}`, {
       method: "PATCH",
@@ -129,40 +109,6 @@ export default function Todos({ taskId, getHeaders, onChanged }) {
           {err}
         </div>
       )}
-      <div className="grid-2" style={{ marginBottom: 8 }}>
-        <input
-          placeholder="Todo を追加"
-          value={newTitle}
-          onChange={(e) => setNewTitle(e.target.value)}
-        />
-        <button onClick={add}>追加</button>
-      </div>
-      <div className="grid-2" style={{ marginBottom: 8 }}>
-        <input
-          type="number"
-          min="0"
-          placeholder="所要時間(分) 任意"
-          value={newEst}
-          onChange={(e) => setNewEst(e.target.value)}
-        />
-        <span />
-      </div>
-      <div className="grid-2" style={{ marginBottom: 8 }}>
-        <input
-          placeholder="関連URL(任意)"
-          value={newUrl}
-          onChange={(e) => setNewUrl(e.target.value)}
-        />
-        <span />
-      </div>
-      <div style={{ marginBottom: 8 }}>
-        <textarea
-          rows={3}
-          placeholder="詳細(マークダウン可) 任意"
-          value={newDetails}
-          onChange={(e) => setNewDetails(e.target.value)}
-        />
-      </div>
       <ul className="list" style={{ margin: 0 }}>
         {todos.length === 0 ? (
           <li style={{ color: "#777", padding: "6px 0" }}>Todoはありません</li>
@@ -217,29 +163,6 @@ export default function Todos({ taskId, getHeaders, onChanged }) {
                           setEditVals({
                             ...editVals,
                             estimated_minutes: e.target.value,
-                          })
-                        }
-                      />
-                    </div>
-                    <div className="grid-2" style={{ marginBottom: 6 }}>
-                      <input
-                        placeholder="関連URL"
-                        value={editVals.url}
-                        onChange={(e) =>
-                          setEditVals({ ...editVals, url: e.target.value })
-                        }
-                      />
-                      <span />
-                    </div>
-                    <div style={{ marginBottom: 6 }}>
-                      <textarea
-                        rows={3}
-                        placeholder="詳細(マークダウン可)"
-                        value={editVals.details_md}
-                        onChange={(e) =>
-                          setEditVals({
-                            ...editVals,
-                            details_md: e.target.value,
                           })
                         }
                       />

@@ -273,6 +273,134 @@ router.get("/projects/:id/weekly-metrics", (req, res) => {
   );
 });
 
+// --- Habits (repeating daily/weekday tasks) API ---
+router.get("/habits", (req, res) => {
+  const { line_user_id, repeats = "daily,weekdays", days = 14 } = req.query;
+  if (!line_user_id)
+    return res.status(400).json({ error: "line_user_id required" });
+  const reps = String(repeats)
+    .split(",")
+    .map((x) => x.trim())
+    .filter((x) => ["daily", "weekdays"].includes(x));
+  if (!reps.length) return res.status(400).json({ error: "invalid repeats" });
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const toDateStr = (d) =>
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const today = toDateStr(now);
+  const start = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate() - (Math.max(parseInt(days || 14, 10), 1) - 1)
+  );
+  const startStr = toDateStr(start);
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  const endStr = toDateStr(end);
+  const dateAxis = [];
+  for (let d = new Date(start); d < end; d.setDate(d.getDate() + 1)) {
+    dateAxis.push(toDateStr(d));
+  }
+  const ph = reps.map(() => "?").join(",");
+  // Fetch repeating tasks for user
+  db.all(
+    `SELECT id,title,repeat,project_id,importance,estimated_minutes,url,details_md,deadline,status,updated_at
+     FROM tasks WHERE line_user_id=? AND repeat IN (${ph})`,
+    [line_user_id, ...reps],
+    (e, rows) => {
+      if (e) return res.status(500).json({ error: "db", detail: String(e) });
+      const all = rows || [];
+      // Group by project_id|repeat|title
+      const keyOf = (t) => `${t.project_id || "none"}|${t.repeat}|${t.title}`;
+      const groups = new Map();
+      for (const t of all) {
+        const k = keyOf(t);
+        const g = groups.get(k) || { items: [], rep: t };
+        g.items.push(t);
+        // rep: prefer a pending item if any, else latest updated
+        const better = () => {
+          if (g.rep.status !== "pending" && t.status === "pending") return true;
+          const a = Date.parse((g.rep.updated_at || "").replace(" ", "T")) || 0;
+          const b = Date.parse((t.updated_at || "").replace(" ", "T")) || 0;
+          return b > a;
+        };
+        if (!g.rep || better()) g.rep = t;
+        groups.set(k, g);
+      }
+      // Fetch done marks in range for these repeats
+      db.all(
+        `SELECT title,repeat,project_id,substr(done_at,1,10) AS day
+         FROM tasks
+         WHERE line_user_id=? AND repeat IN (${ph}) AND done_at >= ? AND done_at < ?`,
+        [line_user_id, ...reps, startStr, endStr],
+        (e2, doneRows) => {
+          if (e2)
+            return res.status(500).json({ error: "db", detail: String(e2) });
+          const marks = new Map(); // key -> Set(days)
+          for (const r of doneRows || []) {
+            const k = `${r.project_id || "none"}|${r.repeat}|${r.title}`;
+            if (!marks.has(k)) marks.set(k, new Set());
+            marks.get(k).add(r.day);
+          }
+          const out = [];
+          for (const [k, g] of groups.entries()) {
+            const rep = g.rep;
+            const daysArr = dateAxis.map((d) => ({ date: d, done: false }));
+            const set = marks.get(k);
+            if (set) {
+              for (const dd of daysArr) dd.done = set.has(dd.date);
+            }
+            // compute current streak ending today
+            let streak = 0;
+            for (let i = daysArr.length - 1; i >= 0; i--) {
+              if (!daysArr[i].done) break;
+              streak++;
+            }
+            out.push({
+              key: k,
+              title: rep.title,
+              repeat: rep.repeat,
+              project_id: rep.project_id || null,
+              task_id: rep.id,
+              importance: rep.importance || null,
+              estimated_minutes: rep.estimated_minutes || null,
+              url: rep.url || null,
+              details_md: rep.details_md || null,
+              deadline: rep.deadline || null,
+              status: rep.status,
+              recent: daysArr,
+              streak,
+            });
+          }
+          // sort by repeat then title
+          out.sort((a, b) =>
+            a.repeat === b.repeat
+              ? a.title.localeCompare(b.title)
+              : a.repeat.localeCompare(b.repeat)
+          );
+          res.json(out);
+        }
+      );
+    }
+  );
+});
+
+// Delete a task (scoped to user)
+router.delete("/tasks/:id", (req, res) => {
+  const { id } = req.params;
+  const { line_user_id } = req.query;
+  if (!line_user_id)
+    return res.status(400).json({ error: "line_user_id required" });
+  db.run(
+    "DELETE FROM tasks WHERE id=? AND line_user_id=?",
+    [id, line_user_id],
+    function (err) {
+      if (err)
+        return res.status(500).json({ error: "db", detail: String(err) });
+      res.json({ deleted: this?.changes || 0 });
+    }
+  );
+});
+
 router.get("/tasks", (req, res) => {
   const {
     line_user_id,

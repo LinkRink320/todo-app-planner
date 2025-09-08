@@ -5,6 +5,8 @@ import Week from "../components/Week.jsx";
 import Todos from "../components/Todos.jsx";
 import Plan from "../components/Plan.jsx";
 import ProjectAnalytics from "../components/ProjectAnalytics.jsx";
+import Habits from "../components/Habits.jsx";
+import Modal from "../components/Modal.jsx";
 // very light markdown to HTML (bold, italics, links, line breaks) — safe as innerText via dangerouslySetInnerHTML only after naive sanitization
 function mdToHtml(md) {
   if (md == null) return "";
@@ -48,7 +50,7 @@ export default function App() {
   const [pid, setPid] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [status, setStatus] = useState(getSession("TASK_STATUS") || "all");
-  const [view, setView] = useState(getSession("VIEW_MODE") || "list"); // list | board | calendar | week | plan | analytics
+  const [view, setView] = useState(getSession("VIEW_MODE") || "list"); // list | board | calendar | week | plan | analytics | habits
   const [pname, setPname] = useState("");
   const [pgoal, setPgoal] = useState("");
   const [pdesc, setPdesc] = useState("");
@@ -75,6 +77,7 @@ export default function App() {
     repeat: "",
     url: "",
     details_md: "",
+    project_id: "none",
   });
   const [projEditing, setProjEditing] = useState(false);
   const [projEditVals, setProjEditVals] = useState({
@@ -82,6 +85,59 @@ export default function App() {
     goal: "",
     description: "",
   });
+  const [taskModalOpen, setTaskModalOpen] = useState(false);
+  const [todoQuickTaskId, setTodoQuickTaskId] = useState(null);
+  const [todoModalOpen, setTodoModalOpen] = useState(false);
+  const [todoTaskId, setTodoTaskId] = useState(null);
+  const [tdTitle, setTdTitle] = useState("");
+  const [tdEst, setTdEst] = useState("");
+  const [tdUrl, setTdUrl] = useState("");
+  const [tdDetails, setTdDetails] = useState("");
+  const [todosRefreshSeq, setTodosRefreshSeq] = useState(0);
+  useEffect(() => {
+    if (todoQuickTaskId != null) {
+      const t = setTimeout(() => setTodoQuickTaskId(null), 300);
+      return () => clearTimeout(t);
+    }
+  }, [todoQuickTaskId]);
+
+  function openTodoModal(taskId) {
+    if (!openTodos.has(taskId)) {
+      const next = new Set(openTodos);
+      next.add(taskId);
+      setOpenTodos(next);
+    }
+    setTodoTaskId(taskId);
+    setTdTitle("");
+    setTdEst("");
+    setTdUrl("");
+    setTdDetails("");
+    setTodoModalOpen(true);
+  }
+
+  async function createTodo() {
+    const title = tdTitle.trim();
+    if (!title || !todoTaskId) return;
+    const r = await fetch("/api/todos", {
+      method: "POST",
+      headers: await h(),
+      body: JSON.stringify({
+        task_id: Number(todoTaskId),
+        title,
+        estimated_minutes: tdEst ? Number(tdEst) : null,
+        url: tdUrl || null,
+        details_md: tdDetails || null,
+      }),
+    });
+    if (!r.ok) return showErr(`create todo ${r.status}`);
+    setTodoModalOpen(false);
+    setTdTitle("");
+    setTdEst("");
+    setTdUrl("");
+    setTdDetails("");
+    setTodosRefreshSeq((n) => n + 1);
+    loadTasks(); // refresh counts
+  }
 
   const currentProject = useMemo(() => {
     return typeof pid === "number"
@@ -314,6 +370,7 @@ export default function App() {
     setTestimated("");
     loadTasks();
     showMsg("タスクを追加しました");
+    setTaskModalOpen(false);
   }
   async function updateTask(id, newStatus) {
     const r = await fetch(`/api/tasks/${id}`, {
@@ -334,6 +391,8 @@ export default function App() {
       repeat: t.repeat || "",
       url: t.url || "",
       details_md: t.details_md || "",
+      project_id:
+        typeof t.project_id === "number" ? String(t.project_id) : "none",
     });
     if (view === "board") setView("list");
   }
@@ -352,6 +411,10 @@ export default function App() {
       repeat: editVals.repeat || null,
       url: editVals.url || null,
       details_md: editVals.details_md || null,
+      project_id:
+        !editVals.project_id || editVals.project_id === "none"
+          ? "none"
+          : Number(editVals.project_id),
     };
     const r = await fetch(`/api/tasks/${id}`, {
       method: "PATCH",
@@ -658,6 +721,12 @@ export default function App() {
                 >
                   Analytics
                 </button>
+                <button
+                  className={view === "habits" ? "ghost" : ""}
+                  onClick={() => setView("habits")}
+                >
+                  習慣
+                </button>
               </div>
               <select
                 value={status}
@@ -672,52 +741,8 @@ export default function App() {
             </div>
           </div>
 
-          <div className="grid-2" style={{ marginTop: 8 }}>
-            <input
-              placeholder="タスク名"
-              value={ttitle}
-              onChange={(e) => setTtitle(e.target.value)}
-            />
-            <input
-              type="datetime-local"
-              placeholder="任意: 2025-09-01 09:00"
-              value={tdeadline}
-              onChange={(e) => setTdeadline(e.target.value)}
-            />
-          </div>
-          <div className="grid-2" style={{ marginTop: 8 }}>
-            <input
-              type="number"
-              min="0"
-              placeholder="所要時間(分) 任意"
-              value={testimated}
-              onChange={(e) => setTestimated(e.target.value)}
-            />
-            <span />
-          </div>
-          <div className="grid-2" style={{ marginTop: 8 }}>
-            <select
-              value={timportance}
-              onChange={(e) => setTimportance(e.target.value)}
-            >
-              <option value="">重要度(任意)</option>
-              <option value="high">高</option>
-              <option value="medium">中</option>
-              <option value="low">低</option>
-            </select>
-            <select
-              value={trepeat}
-              onChange={(e) => setTrepeat(e.target.value)}
-            >
-              <option value="">繰り返し(任意)</option>
-              <option value="daily">毎日</option>
-              <option value="weekdays">平日</option>
-              <option value="weekly">毎週</option>
-              <option value="monthly">毎月</option>
-            </select>
-          </div>
           <div className="row stack-sm" style={{ marginTop: 8 }}>
-            <button onClick={createTask}>タスク追加</button>
+            <button onClick={() => setTaskModalOpen(true)}>タスク追加</button>
             <button onClick={loadTasks}>更新</button>
           </div>
           <div className="grid-2" style={{ marginTop: 8 }}>
@@ -843,7 +868,15 @@ export default function App() {
                             )
                           }
                         />
-                        <div style={{ flex: 1 }}>
+                        <div
+                          style={{ flex: 1, cursor: "pointer" }}
+                          onClick={() => {
+                            const next = new Set(openTodos);
+                            if (next.has(t.id)) next.delete(t.id);
+                            else next.add(t.id);
+                            setOpenTodos(next);
+                          }}
+                        >
                           {editingId === t.id ? (
                             <>
                               <input
@@ -916,6 +949,28 @@ export default function App() {
                                   <option value="weekly">毎週</option>
                                   <option value="monthly">毎月</option>
                                 </select>
+                              </div>
+                              <div
+                                className="grid-2"
+                                style={{ marginBottom: 6 }}
+                              >
+                                <select
+                                  value={editVals.project_id}
+                                  onChange={(e) =>
+                                    setEditVals({
+                                      ...editVals,
+                                      project_id: e.target.value,
+                                    })
+                                  }
+                                >
+                                  <option value="none">プロジェクトなし</option>
+                                  {projects.map((p) => (
+                                    <option key={p.id} value={String(p.id)}>
+                                      {p.name}
+                                    </option>
+                                  ))}
+                                </select>
+                                <span />
                               </div>
                               <div
                                 className="grid-2"
@@ -1013,14 +1068,10 @@ export default function App() {
                             </button>
                             <button
                               className="ghost"
-                              onClick={() => {
-                                const next = new Set(openTodos);
-                                if (next.has(t.id)) next.delete(t.id);
-                                else next.add(t.id);
-                                setOpenTodos(next);
-                              }}
+                              title="Todoを追加"
+                              onClick={() => openTodoModal(t.id)}
                             >
-                              Todos
+                              + Todo
                             </button>
                           </div>
                         )}
@@ -1032,6 +1083,8 @@ export default function App() {
                               taskId={t.id}
                               getHeaders={h}
                               onChanged={loadTasks}
+                              autoFocusNew={todoQuickTaskId === t.id}
+                              refreshSeq={todosRefreshSeq}
                             />
                           </div>
                         </li>
@@ -1137,6 +1190,8 @@ export default function App() {
               projectId={typeof pid === "number" ? pid : null}
               getHeaders={h}
             />
+          ) : view === "habits" ? (
+            <Habits userId={uid} getHeaders={h} projectId={pid} />
           ) : (
             <Plan userId={uid} getHeaders={h} />
           )}
@@ -1214,6 +1269,107 @@ export default function App() {
           </aside>
         </>
       )}
+      <Modal
+        open={taskModalOpen}
+        title="タスクを追加"
+        onClose={() => setTaskModalOpen(false)}
+        footer={
+          <>
+            <button onClick={createTask}>追加</button>
+            <button className="ghost" onClick={() => setTaskModalOpen(false)}>
+              キャンセル
+            </button>
+          </>
+        }
+      >
+        <div className="grid-2" style={{ marginTop: 8 }}>
+          <input
+            autoFocus
+            placeholder="タスク名"
+            value={ttitle}
+            onChange={(e) => setTtitle(e.target.value)}
+          />
+          <input
+            type="datetime-local"
+            placeholder="任意: 2025-09-01 09:00"
+            value={tdeadline}
+            onChange={(e) => setTdeadline(e.target.value)}
+          />
+        </div>
+        <div className="grid-2" style={{ marginTop: 8 }}>
+          <input
+            type="number"
+            min="0"
+            placeholder="所要時間(分) 任意"
+            value={testimated}
+            onChange={(e) => setTestimated(e.target.value)}
+          />
+          <span />
+        </div>
+        <div className="grid-2" style={{ marginTop: 8 }}>
+          <select
+            value={timportance}
+            onChange={(e) => setTimportance(e.target.value)}
+          >
+            <option value="">重要度(任意)</option>
+            <option value="high">高</option>
+            <option value="medium">中</option>
+            <option value="low">低</option>
+          </select>
+          <select value={trepeat} onChange={(e) => setTrepeat(e.target.value)}>
+            <option value="">繰り返し(任意)</option>
+            <option value="daily">毎日</option>
+            <option value="weekdays">平日</option>
+            <option value="weekly">毎週</option>
+            <option value="monthly">毎月</option>
+          </select>
+        </div>
+      </Modal>
+      <Modal
+        open={todoModalOpen}
+        title="Todoを追加"
+        onClose={() => setTodoModalOpen(false)}
+        footer={
+          <>
+            <button onClick={createTodo}>追加</button>
+            <button className="ghost" onClick={() => setTodoModalOpen(false)}>
+              キャンセル
+            </button>
+          </>
+        }
+      >
+        <div className="grid-2" style={{ marginTop: 8 }}>
+          <input
+            autoFocus
+            placeholder="Todo タイトル"
+            value={tdTitle}
+            onChange={(e) => setTdTitle(e.target.value)}
+          />
+          <input
+            type="number"
+            min="0"
+            placeholder="所要時間(分) 任意"
+            value={tdEst}
+            onChange={(e) => setTdEst(e.target.value)}
+          />
+        </div>
+        <div className="grid-2" style={{ marginTop: 8 }}>
+          <input
+            placeholder="関連URL(任意)"
+            value={tdUrl}
+            onChange={(e) => setTdUrl(e.target.value)}
+          />
+          <span />
+        </div>
+        <div style={{ marginTop: 8 }}>
+          <textarea
+            rows={3}
+            placeholder="詳細(マークダウン可) 任意"
+            value={tdDetails}
+            onChange={(e) => setTdDetails(e.target.value)}
+          />
+        </div>
+      </Modal>
     </div>
   );
 }

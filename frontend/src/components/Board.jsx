@@ -88,7 +88,14 @@ export default function Board({
           hover.status === status && hover.index === index ? "drag-over" : ""
         }`}
       >
-        <div className="kanban-title">{t.title}</div>
+        <div
+          className="kanban-title"
+          style={{ cursor: onToggleTodos ? "pointer" : "default" }}
+          onClick={() => onToggleTodos && onToggleTodos(t.id)}
+          title={onToggleTodos ? "Todosを表示/非表示" : undefined}
+        >
+          {t.title}
+        </div>
         <div className="kanban-meta">
           {(t.deadline || "-") +
             (t.urgency ? ` ・ 緊急度:${label(t.urgency)}` : "") +
@@ -102,15 +109,6 @@ export default function Board({
           <button onClick={() => onToggleDone(t.id, t.status !== "done")}>
             完了
           </button>
-          {onToggleTodos && (
-            <button
-              className="ghost"
-              onClick={() => onToggleTodos(t.id)}
-              title="Todos"
-            >
-              Todos
-            </button>
-          )}
         </div>
         {openTodos && openTodos.has(t.id) && (
           <div style={{ marginTop: 8 }}>
