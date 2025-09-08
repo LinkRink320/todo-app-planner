@@ -16,7 +16,9 @@ export default class ErrorBoundary extends React.Component {
         body: JSON.stringify({
           line_user_id: "frontend",
           type: "check",
-          note: `error: ${error?.message || String(error)}\ninfo: ${info?.componentStack || ""}`,
+          note: `error: ${error?.message || String(error)}\ninfo: ${
+            info?.componentStack || ""
+          }`,
         }),
       }).catch(() => {});
     } catch {}

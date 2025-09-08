@@ -47,6 +47,79 @@ if (fs.existsSync(reactDist)) {
 
 app.listen(env.PORT, () => console.log("server ready"));
 
+// Evening planning reminder (default 21:00). Override with env.EVENING_PLAN_REMINDER_CRON.
+const EVENING_PLAN_REMINDER_CRON =
+  env.EVENING_PLAN_REMINDER_CRON || "0 21 * * *";
+cron.schedule(EVENING_PLAN_REMINDER_CRON, async () => {
+  try {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(
+      now.getDate()
+    )}`;
+    // tomorrow y-m-d
+    const tm = new Date(now);
+    tm.setDate(tm.getDate() + 1);
+    const tomorrow = `${tm.getFullYear()}-${pad(tm.getMonth() + 1)}-${pad(
+      tm.getDate()
+    )}`;
+    // Select users who interacted or have tasks recently to limit spam: anyone with pending tasks or any project
+    const userIds = await new Promise((resolve) => {
+      db.all(
+        `SELECT DISTINCT line_user_id FROM tasks WHERE status='pending' LIMIT 1000`,
+        [],
+        (e, rows) => resolve(e ? [] : rows.map((r) => r.line_user_id))
+      );
+    });
+    for (const uid of userIds) {
+      // Count pending tasks today and tomorrow for brief context
+      const [todays, tomorrows] = await Promise.all([
+        new Promise((resolve) =>
+          db.all(
+            `SELECT id,title,deadline FROM tasks WHERE line_user_id=? AND status='pending' AND deadline LIKE ? ORDER BY deadline LIMIT 5`,
+            [uid, `${today} %`],
+            (e, rows) => resolve(e ? [] : rows)
+          )
+        ),
+        new Promise((resolve) =>
+          db.all(
+            `SELECT id,title,deadline FROM tasks WHERE line_user_id=? AND status='pending' AND deadline LIKE ? ORDER BY deadline LIMIT 5`,
+            [uid, `${tomorrow} %`],
+            (e, rows) => resolve(e ? [] : rows)
+          )
+        ),
+      ]);
+      const lines = [];
+      lines.push(`一日の振り返りと明日の準備をしませんか？`);
+      if (todays.length)
+        lines.push(
+          `今日の残り (${todays.length}):\n` +
+            todays
+              .map((t) => `・${t.title} (${t.deadline.slice(11, 16)})`)
+              .join("\n")
+        );
+      if (tomorrows.length)
+        lines.push(
+          `明日の期限 (${tomorrows.length}):\n` +
+            tomorrows
+              .map((t) => `・${t.title} (${t.deadline.slice(11, 16)})`)
+              .join("\n")
+        );
+      lines.push("明日のタスクを追加・調整しましょう。");
+      try {
+        await client.pushMessage(uid, {
+          type: "text",
+          text: lines.join("\n\n"),
+        });
+      } catch (e) {
+        console.error("[PUSH evening reminder ERROR]", e?.response?.data || e);
+      }
+    }
+  } catch (e) {
+    console.error("[CRON evening reminder ERROR]", e);
+  }
+});
+
 cron.schedule("* * * * *", async () => {
   const now = new Date();
   const pad = (n) => n.toString().padStart(2, "0");
@@ -89,7 +162,7 @@ cron.schedule("* * * * *", async () => {
       if (!rows || !rows.length) return;
       const ids = rows.map((r) => r.id);
       db.run(
-        `UPDATE tasks SET status='failed' WHERE id IN (${ids
+        `UPDATE tasks SET status='failed', failed_at=datetime('now','localtime') WHERE id IN (${ids
           .map(() => "?")
           .join(",")})`,
         ids,
@@ -241,5 +314,83 @@ cron.schedule(MORNING_SUMMARY_CRON, async () => {
     }
   } catch (e) {
     console.error("[CRON morning summary ERROR]", e);
+  }
+});
+
+// Morning deletion confirmation for tasks that failed yesterday (default 08:00). Override with env.MORNING_DELETE_CONFIRM_CRON.
+const MORNING_DELETE_CONFIRM_CRON =
+  env.MORNING_DELETE_CONFIRM_CRON || "0 8 * * *";
+cron.schedule(MORNING_DELETE_CONFIRM_CRON, async () => {
+  try {
+    const now = new Date();
+    // Compute "yesterday" date string in local time (YYYY-MM-DD)
+    const pad = (n) => String(n).padStart(2, "0");
+    const y = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() - 1,
+      0,
+      0,
+      0,
+      0
+    );
+    const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(
+      now.getDate()
+    )}`;
+    const ymd = `${y.getFullYear()}-${pad(y.getMonth() + 1)}-${pad(
+      y.getDate()
+    )}`;
+    // Collect users who had tasks fail yesterday
+    const userIds = await new Promise((resolve) =>
+      db.all(
+        `SELECT DISTINCT line_user_id FROM tasks WHERE status='failed' AND failed_at LIKE ? LIMIT 1000`,
+        [`${ymd}%`],
+        (e, rows) => resolve(e ? [] : rows.map((r) => r.line_user_id))
+      )
+    );
+    for (const uid of userIds) {
+      // fetch up to 5 failed-yesterday tasks
+      const failedYesterday = await new Promise((resolve) =>
+        db.all(
+          `SELECT id,title,deadline FROM tasks WHERE line_user_id=? AND status='failed' AND failed_at LIKE ? ORDER BY failed_at ASC LIMIT 5`,
+          [uid, `${ymd}%`],
+          (e, rows) => resolve(e ? [] : rows)
+        )
+      );
+      if (!failedYesterday.length) continue;
+      try {
+        await client.pushMessage(uid, {
+          type: "text",
+          text: `おはようございます。昨日( ${ymd} )に未達となったタスクの整理をしますか？`,
+        });
+      } catch {}
+      for (const t of failedYesterday) {
+        try {
+          await client.pushMessage(uid, {
+            type: "template",
+            altText: `昨日の未達: ${t.title}`,
+            template: {
+              type: "confirm",
+              text: `昨日未達:『${t.title}』\n削除しますか？`,
+              actions: [
+                {
+                  type: "postback",
+                  label: "削除する",
+                  data: `action=delete-task&id=${t.id}`,
+                },
+                { type: "postback", label: "やめる", data: "action=cancel" },
+              ],
+            },
+          });
+        } catch (e) {
+          console.error(
+            "[PUSH failed-yesterday confirm ERROR]",
+            e?.response?.data || e
+          );
+        }
+      }
+    }
+  } catch (e) {
+    console.error("[CRON morning delete confirm ERROR]", e);
   }
 });
