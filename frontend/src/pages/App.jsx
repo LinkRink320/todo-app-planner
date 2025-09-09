@@ -4,6 +4,7 @@ import Calendar from "../components/Calendar.jsx";
 import Week from "../components/Week.jsx";
 import Todos from "../components/Todos.jsx";
 import Plan from "../components/Plan.jsx";
+import Timeline from "../components/Timeline.jsx";
 import ProjectAnalytics from "../components/ProjectAnalytics.jsx";
 import Habits from "../components/Habits.jsx";
 import Modal from "../components/Modal.jsx";
@@ -52,7 +53,7 @@ export default function App() {
   const [pid, setPid] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [status, setStatus] = useState(getSession("TASK_STATUS") || "all");
-  const [view, setView] = useState(getSession("VIEW_MODE") || "list"); // list | board | calendar | week | plan | analytics | habits
+  const [view, setView] = useState(getSession("VIEW_MODE") || "list"); // list | board | calendar | week | plan | timeline | analytics | habits
   const [pname, setPname] = useState("");
   const [pgoal, setPgoal] = useState("");
   const [pdesc, setPdesc] = useState("");
@@ -349,6 +350,7 @@ export default function App() {
   async function createTask() {
     if (!uid) return showErr("LINE User IDを入力してください");
     if (!ttitle) return showErr("タスク名を入力してください");
+    if (!tdeadline) return showErr("期限を設定してください");
     let deadlineOut = tdeadline;
     if (deadlineOut && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(deadlineOut))
       deadlineOut = deadlineOut.replace("T", " ");
@@ -368,8 +370,10 @@ export default function App() {
     });
     if (!r.ok) return showErr(`create task ${r.status}`);
     setTtitle("");
+    setTdeadline("");
     setTimportance("");
     setTestimated("");
+    setTrepeat("");
     loadTasks();
     showMsg("タスクを追加しました");
     setTaskModalOpen(false);
@@ -382,6 +386,22 @@ export default function App() {
     });
     if (!r.ok) return showErr(`update task ${r.status}`);
     loadTasks();
+  }
+  async function deleteTask(id) {
+    try {
+      const r = await fetch(
+        `/api/tasks/${id}?line_user_id=${encodeURIComponent(uid)}`,
+        {
+          method: "DELETE",
+          headers: await h(),
+        }
+      );
+      if (!r.ok) return showErr(`delete task ${r.status}`);
+      showMsg("タスクを削除しました");
+      loadTasks();
+    } catch (e) {
+      showErr(e);
+    }
   }
   function startEdit(t) {
     setEditingId(t.id);
@@ -688,48 +708,62 @@ export default function App() {
                   )}
                 </div>
               )}
-              <div className="row" style={{ justifyContent: "flex-end" }}>
+              <div className="view-tabs">
                 <button
-                  className={view === "list" ? "ghost" : ""}
+                  className={view === "list" ? "active" : ""}
                   onClick={() => setView("list")}
+                  title="リスト表示"
                 >
-                  リスト
+                  📋
                 </button>
                 <button
-                  className={view === "board" ? "ghost" : ""}
+                  className={view === "board" ? "active" : ""}
                   onClick={() => setView("board")}
+                  title="ボード表示"
                 >
-                  ボード
+                  📊
                 </button>
                 <button
-                  className={view === "calendar" ? "ghost" : ""}
+                  className={view === "calendar" ? "active" : ""}
                   onClick={() => setView("calendar")}
+                  title="カレンダー表示"
                 >
-                  カレンダー
+                  📅
                 </button>
                 <button
-                  className={view === "week" ? "ghost" : ""}
+                  className={view === "week" ? "active" : ""}
                   onClick={() => setView("week")}
+                  title="週表示"
                 >
-                  週
+                  📆
                 </button>
                 <button
-                  className={view === "plan" ? "ghost" : ""}
+                  className={view === "plan" ? "active" : ""}
                   onClick={() => setView("plan")}
+                  title="プラン表示"
                 >
-                  プラン
+                  📝
                 </button>
                 <button
-                  className={view === "analytics" ? "ghost" : ""}
+                  className={view === "timeline" ? "active" : ""}
+                  onClick={() => setView("timeline")}
+                  title="タイムライン表示"
+                >
+                  ⏰
+                </button>
+                <button
+                  className={view === "analytics" ? "active" : ""}
                   onClick={() => setView("analytics")}
+                  title="Analytics表示"
                 >
-                  Analytics
+                  📈
                 </button>
                 <button
-                  className={view === "habits" ? "ghost" : ""}
+                  className={view === "habits" ? "active" : ""}
                   onClick={() => setView("habits")}
+                  title="習慣表示"
                 >
-                  習慣
+                  ✅
                 </button>
               </div>
               <select
@@ -1077,6 +1111,22 @@ export default function App() {
                             >
                               + Todo
                             </button>
+                            <button
+                              className="ghost"
+                              style={{ color: "#f44336" }}
+                              title="タスクを削除"
+                              onClick={() => {
+                                if (
+                                  confirm(
+                                    `タスク「${t.title}」を削除しますか？`
+                                  )
+                                ) {
+                                  deleteTask(t.id);
+                                }
+                              }}
+                            >
+                              削除
+                            </button>
                           </div>
                         )}
                       </li>
@@ -1189,6 +1239,25 @@ export default function App() {
                 }
               }}
             />
+          ) : view === "timeline" ? (
+            <Timeline
+              userId={uid}
+              getHeaders={h}
+              tasks={tasks}
+              onTaskUpdate={async (taskId, updates) => {
+                try {
+                  const r = await fetch(`/api/tasks/${taskId}`, {
+                    method: "PATCH",
+                    headers: await h(),
+                    body: JSON.stringify(updates),
+                  });
+                  if (!r.ok) return showErr(`update task ${r.status}`);
+                  loadTasks();
+                } catch (e) {
+                  showErr(e);
+                }
+              }}
+            />
           ) : view === "analytics" ? (
             <ProjectAnalytics
               projectId={typeof pid === "number" ? pid : null}
@@ -1292,12 +1361,15 @@ export default function App() {
             placeholder="タスク名"
             value={ttitle}
             onChange={(e) => setTtitle(e.target.value)}
+            required
           />
           <input
             type="datetime-local"
-            placeholder="任意: 2025-09-01 09:00"
+            placeholder="期限 (必須)"
             value={tdeadline}
             onChange={(e) => setTdeadline(e.target.value)}
+            required
+            title="期限の設定は必須です"
           />
         </div>
         <div className="grid-2" style={{ marginTop: 8 }}>

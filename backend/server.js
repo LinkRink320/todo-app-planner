@@ -8,6 +8,8 @@ const db = require("./db");
 const { env, line: lineCfg } = require("./config");
 const apiRouter = require("./routes/api");
 const lineRouter = require("./routes/line");
+const timeTrackingRouter = require("./routes/timeTracking");
+const { handleRecurringTaskCreation } = require("./utils/recurring");
 
 const client = new Client(lineCfg);
 const app = express();
@@ -30,6 +32,7 @@ app.get("/api/config", (req, res) => {
   });
 });
 app.use("/api", apiRouter);
+app.use("/api/time-entries", timeTrackingRouter);
 app.use("/line", lineRouter);
 
 const reactDist = path.join(__dirname, "..", "frontend", "dist");
@@ -155,7 +158,7 @@ cron.schedule("* * * * *", async () => {
   sendReminders(target30, "30分前");
   sendReminders(target05, "5分前");
   db.all(
-    'SELECT id, line_user_id, title, deadline FROM tasks WHERE status="pending" AND deadline <= ? ORDER BY deadline ASC LIMIT 100',
+    'SELECT id, line_user_id, title, deadline, repeat FROM tasks WHERE status="pending" AND deadline <= ? ORDER BY deadline ASC LIMIT 100',
     [current],
     async (err, rows) => {
       if (err) return console.error("[CRON DB ERROR]", err);
@@ -169,6 +172,7 @@ cron.schedule("* * * * *", async () => {
         async (uErr) => {
           if (uErr) return console.error("[CRON UPDATE ERROR]", uErr);
           for (const r of rows) {
+            // Send notification to user and group
             const msg = {
               type: "text",
               text: `⚠️未達成「${r.title}」(期限: ${r.deadline})`,
@@ -193,6 +197,47 @@ cron.schedule("* * * * *", async () => {
                 }
               }
             );
+
+            // Handle recurring task generation for failed tasks
+            if (r.repeat) {
+              try {
+                // Get full task details for recurring task creation
+                db.get(
+                  "SELECT * FROM tasks WHERE id=?",
+                  [r.id],
+                  async (taskErr, taskRow) => {
+                    if (taskErr || !taskRow) return;
+
+                    // Create next recurring task with 1-day delay for failed tasks
+                    const result = await handleRecurringTaskCreation(
+                      r.id,
+                      taskRow,
+                      { skipDays: 1 }
+                    );
+                    if (result.success) {
+                      console.log(
+                        `[RECURRING] Created next task for failed recurring task: ${r.title} (original: ${r.id}, new: ${result.taskId})`
+                      );
+
+                      // Notify user about next occurrence
+                      try {
+                        await client.pushMessage(r.line_user_id, {
+                          type: "text",
+                          text: `🔄 繰り返しタスク「${r.title}」の次回分を明日に設定しました`,
+                        });
+                      } catch (e) {
+                        console.error(
+                          "[PUSH recurring notification ERROR]",
+                          e?.response?.data || e
+                        );
+                      }
+                    }
+                  }
+                );
+              } catch (e) {
+                console.error("[RECURRING task creation ERROR]", e);
+              }
+            }
           }
         }
       );
@@ -403,5 +448,119 @@ cron.schedule(MORNING_DELETE_CONFIRM_CRON, async () => {
     }
   } catch (e) {
     console.error("[CRON morning delete confirm ERROR]", e);
+  }
+});
+
+// Daily recurring tasks check (default 06:00). Override with env.DAILY_RECURRING_CHECK_CRON.
+const DAILY_RECURRING_CHECK_CRON =
+  env.DAILY_RECURRING_CHECK_CRON || "0 6 * * *";
+cron.schedule(DAILY_RECURRING_CHECK_CRON, async () => {
+  try {
+    console.log(
+      "[CRON recurring check] Starting daily recurring tasks check..."
+    );
+
+    // Find recurring tasks that should have next occurrences but don't
+    const now = new Date();
+    const pad = (n) => n.toString().padStart(2, "0");
+    const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(
+      now.getDate()
+    )}`;
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const yesterdayStr = `${yesterday.getFullYear()}-${pad(
+      yesterday.getMonth() + 1
+    )}-${pad(yesterday.getDate())}`;
+
+    // Find completed or failed recurring tasks from yesterday that might need next occurrence
+    const tasksToCheck = await new Promise((resolve) => {
+      db.all(
+        `SELECT DISTINCT t1.line_user_id, t1.title, t1.repeat, t1.project_id
+         FROM tasks t1 
+         WHERE t1.repeat IS NOT NULL 
+           AND t1.repeat != ''
+           AND (
+             (t1.status = 'done' AND date(t1.done_at) = ?)
+             OR (t1.status = 'failed' AND date(t1.failed_at) = ?)
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM tasks t2 
+             WHERE t2.line_user_id = t1.line_user_id 
+               AND t2.title = t1.title 
+               AND t2.repeat = t1.repeat
+               AND COALESCE(t2.project_id, -1) = COALESCE(t1.project_id, -1)
+               AND t2.status = 'pending'
+               AND date(t2.deadline) >= ?
+           )`,
+        [yesterdayStr, yesterdayStr, today],
+        (e, rows) => resolve(e ? [] : rows)
+      );
+    });
+
+    console.log(
+      `[CRON recurring check] Found ${tasksToCheck.length} recurring task patterns to check`
+    );
+
+    for (const pattern of tasksToCheck) {
+      try {
+        // Get the most recent task for this pattern to use as template
+        const templateTask = await new Promise((resolve) => {
+          db.get(
+            `SELECT * FROM tasks 
+             WHERE line_user_id = ? 
+               AND title = ? 
+               AND repeat = ?
+               AND COALESCE(project_id, -1) = COALESCE(?, -1)
+             ORDER BY 
+               CASE 
+                 WHEN status = 'done' THEN done_at
+                 WHEN status = 'failed' THEN failed_at
+                 ELSE created_at
+               END DESC
+             LIMIT 1`,
+            [
+              pattern.line_user_id,
+              pattern.title,
+              pattern.repeat,
+              pattern.project_id,
+            ],
+            (e, row) => resolve(e ? null : row)
+          );
+        });
+
+        if (!templateTask || !templateTask.deadline) continue;
+
+        // Create next occurrence from today
+        const result = await handleRecurringTaskCreation(
+          templateTask.id,
+          templateTask,
+          { skipToNextInterval: true }
+        );
+        if (result.success) {
+          console.log(
+            `[CRON recurring check] Created missing recurring task: ${pattern.title} for user ${pattern.line_user_id}`
+          );
+
+          // Optionally notify user about auto-created task
+          try {
+            await client.pushMessage(pattern.line_user_id, {
+              type: "text",
+              text: `🔄 繰り返しタスク「${pattern.title}」の今日分を自動作成しました`,
+            });
+          } catch (e) {
+            console.error(
+              "[PUSH recurring auto-create notification ERROR]",
+              e?.response?.data || e
+            );
+          }
+        }
+      } catch (e) {
+        console.error(
+          `[CRON recurring check] Error processing pattern ${pattern.title}:`,
+          e
+        );
+      }
+    }
+  } catch (e) {
+    console.error("[CRON recurring check ERROR]", e);
   }
 });

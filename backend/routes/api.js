@@ -2,6 +2,7 @@ const express = require("express");
 const { Client } = require("@line/bot-sdk");
 const db = require("../db");
 const { env, line } = require("../config");
+const { handleRecurringTaskCreation } = require("../utils/recurring");
 
 const router = express.Router();
 const client = new Client(line);
@@ -508,6 +509,10 @@ router.post("/tasks", (req, res) => {
   } = req.body || {};
   if (!line_user_id || !title)
     return res.status(400).json({ error: "line_user_id and title required" });
+  if (!deadline && !soft_deadline)
+    return res
+      .status(400)
+      .json({ error: "deadline or soft_deadline required" });
   let imp = null;
   if (importance) {
     const v = String(importance).toLowerCase();
@@ -645,89 +650,32 @@ router.patch("/tasks/:id", (req, res) => {
     const updated = this?.changes || 0;
     // If marked done and task has repeat and deadline, create next occurrence
     if (updated && typeof status !== "undefined" && String(status) === "done") {
-      db.get(
-        "SELECT line_user_id,title,deadline,soft_deadline,project_id,importance,repeat,estimated_minutes,url,details_md FROM tasks WHERE id=?",
-        [id],
-        (gErr, row) => {
-          if (gErr || !row) return res.json({ updated });
-          const rep = row.repeat ? String(row.repeat) : null;
-          if (!rep || !row.deadline) return res.json({ updated });
-          const next = calcNextDeadline(row.deadline, rep);
-          if (!next) return res.json({ updated });
-          db.run(
-            "INSERT INTO tasks(line_user_id,title,deadline,soft_deadline,project_id,importance,repeat,estimated_minutes,url,details_md) VALUES (?,?,?,?,?,?,?,?,?,?)",
-            [
-              row.line_user_id,
-              row.title,
-              next,
-              row.soft_deadline || null,
-              row.project_id || null,
-              row.importance || null,
-              rep,
-              row.estimated_minutes || null,
-              row.url || null,
-              row.details_md || null,
-            ],
-            function (insErr) {
-              if (insErr) return res.json({ updated, repeated: false });
-              const newTaskId = this?.lastID;
-              if (!newTaskId)
-                return res.json({ updated, repeated: true, copied_todos: 0 });
-              // Copy open (not done) todos to the new repeated task, preserving order and estimates
-              db.all(
-                "SELECT title, estimated_minutes, sort_order FROM todos WHERE task_id=? AND done=0 ORDER BY CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END, sort_order, id",
-                [id],
-                (tErr, todos) => {
-                  if (tErr || !Array.isArray(todos) || todos.length === 0) {
-                    return res.json({
-                      updated,
-                      repeated: true,
-                      copied_todos: 0,
-                    });
-                  }
-                  const stmt = db.prepare(
-                    "INSERT INTO todos(task_id,title,estimated_minutes,sort_order,url,details_md) VALUES (?,?,?,?,?,?)"
-                  );
-                  db.run("BEGIN");
-                  for (const td of todos) {
-                    stmt.run([
-                      newTaskId,
-                      td.title,
-                      Number.isFinite(Number(td.estimated_minutes))
-                        ? Number(td.estimated_minutes)
-                        : null,
-                      Number.isFinite(Number(td.sort_order))
-                        ? Number(td.sort_order)
-                        : null,
-                      td.url || null,
-                      td.details_md || null,
-                    ]);
-                  }
-                  stmt.finalize((fe) => {
-                    if (fe) {
-                      try {
-                        db.run("ROLLBACK");
-                      } catch {}
-                      return res.json({
-                        updated,
-                        repeated: true,
-                        copied_todos: 0,
-                      });
-                    }
-                    db.run("COMMIT", () =>
-                      res.json({
-                        updated,
-                        repeated: true,
-                        copied_todos: todos.length,
-                      })
-                    );
-                  });
-                }
-              );
-            }
-          );
+      db.get("SELECT * FROM tasks WHERE id=?", [id], async (gErr, row) => {
+        if (gErr || !row) return res.json({ updated });
+        const rep = row.repeat ? String(row.repeat) : null;
+        if (!rep || !row.deadline) return res.json({ updated });
+
+        try {
+          const result = await handleRecurringTaskCreation(id, row);
+          if (result.success) {
+            return res.json({
+              updated,
+              repeated: true,
+              copied_todos: result.copied_todos || 0,
+              next_task_id: result.taskId,
+            });
+          } else {
+            return res.json({
+              updated,
+              repeated: false,
+              reason: result.reason,
+            });
+          }
+        } catch (e) {
+          console.error("[RECURRING task creation ERROR]", e);
+          return res.json({ updated, repeated: false, error: e.message });
         }
-      );
+      });
     } else {
       res.json({ updated });
     }

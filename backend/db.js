@@ -64,6 +64,12 @@ db.serialize(() => {
       alters.push("ALTER TABLE tasks ADD COLUMN failed_at TEXT");
     if (!names.has("done_at"))
       alters.push("ALTER TABLE tasks ADD COLUMN done_at TEXT");
+    if (!names.has("started_at"))
+      alters.push("ALTER TABLE tasks ADD COLUMN started_at TEXT");
+    if (!names.has("actual_minutes"))
+      alters.push("ALTER TABLE tasks ADD COLUMN actual_minutes INTEGER");
+    if (!names.has("time_entries"))
+      alters.push("ALTER TABLE tasks ADD COLUMN time_entries TEXT"); // JSON array of {start, end, duration}
 
     // If deadline column is NOT NULL, migrate to allow NULL (optional deadline)
     const deadlineCol = (cols || []).find((c) => c.name === "deadline");
