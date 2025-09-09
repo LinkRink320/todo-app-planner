@@ -509,17 +509,31 @@ router.post("/tasks", (req, res) => {
   } = req.body || {};
   if (!line_user_id || !title)
     return res.status(400).json({ error: "line_user_id and title required" });
-  if (!deadline && !soft_deadline)
-    return res
-      .status(400)
-      .json({ error: "deadline or soft_deadline required" });
+
+  // For recurring/habit tasks, deadline is not required but we need one for generation
+  const rep = repeat ? String(repeat) : null;
+  let finalDeadline = deadline;
+
+  // If it's a recurring task without deadline, set default to today 9:00 AM
+  if (rep && !deadline) {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    finalDeadline = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(
+      now.getDate()
+    )} 09:00`;
+  }
+
+  if (!rep && !finalDeadline && !soft_deadline)
+    return res.status(400).json({
+      error: "deadline or soft_deadline required for non-recurring tasks",
+    });
+
   let imp = null;
   if (importance) {
     const v = String(importance).toLowerCase();
     if (["high", "medium", "low"].includes(v)) imp = v;
     else return res.status(400).json({ error: "invalid importance" });
   }
-  const rep = repeat ? String(repeat) : null;
   const est = Number.isFinite(Number(estimated_minutes))
     ? Number(estimated_minutes)
     : null;
@@ -528,7 +542,7 @@ router.post("/tasks", (req, res) => {
     [
       line_user_id,
       title,
-      deadline || null,
+      finalDeadline || null,
       soft_deadline || null,
       project_id || null,
       imp,
