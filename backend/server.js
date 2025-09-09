@@ -9,6 +9,7 @@ const { env, line: lineCfg } = require("./config");
 const apiRouter = require("./routes/api");
 const lineRouter = require("./routes/line");
 const timeTrackingRouter = require("./routes/timeTracking");
+const analyticsRouter = require("./routes/analytics");
 const { handleRecurringTaskCreation } = require("./utils/recurring");
 
 const client = new Client(lineCfg);
@@ -33,6 +34,7 @@ app.get("/api/config", (req, res) => {
 });
 app.use("/api", apiRouter);
 app.use("/api/time-entries", timeTrackingRouter);
+app.use("/api/analytics", analyticsRouter);
 app.use("/line", lineRouter);
 
 const reactDist = path.join(__dirname, "..", "frontend", "dist");

@@ -114,6 +114,16 @@ ngrok http 3000
 - MORNING_DELETE_CONFIRM_CRON（任意。前日未達の削除確認の cron。既定: `0 8 * * *`）
 - EVENING_PLAN_REMINDER_CRON（任意。夜の計画リマインドの cron。既定: `0 21 * * *`）
 
+### AI 振り返り機能（任意）
+
+- OPENAI_API_KEY（OpenAI API キー）
+- ANTHROPIC_API_KEY（Anthropic API キー）
+- GEMINI_API_KEY（Google Gemini API キー）
+- AI_PROVIDER（任意。`openai`、`anthropic`、`gemini` のいずれか。既定: `openai`）
+- AI_MODEL（任意。使用する AI モデル。既定: `gpt-3.5-turbo`）
+
+**注意**: AI キーが設定されていない場合は、シンプルなルールベースの振り返りが使用されます。
+
 ## ヘルスチェック
 
 - GET `/` → `ok`

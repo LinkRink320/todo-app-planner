@@ -12,6 +12,13 @@ module.exports = {
     MORNING_SUMMARY_CRON: process.env.MORNING_SUMMARY_CRON,
     MORNING_DELETE_CONFIRM_CRON: process.env.MORNING_DELETE_CONFIRM_CRON,
     EVENING_PLAN_REMINDER_CRON: process.env.EVENING_PLAN_REMINDER_CRON,
+
+    // AI Services
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY || "",
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || "",
+    GEMINI_API_KEY: process.env.GEMINI_API_KEY || "",
+    AI_PROVIDER: process.env.AI_PROVIDER || "openai",
+    AI_MODEL: process.env.AI_MODEL || "gpt-3.5-turbo",
   },
   line: {
     channelSecret: process.env.LINE_CHANNEL_SECRET,

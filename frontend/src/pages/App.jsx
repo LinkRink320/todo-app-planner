@@ -6,6 +6,7 @@ import Todos from "../components/Todos.jsx";
 import Plan from "../components/Plan.jsx";
 import Timeline from "../components/Timeline.jsx";
 import ProjectAnalytics from "../components/ProjectAnalytics.jsx";
+import ProductivityAnalytics from "../components/ProductivityAnalytics.jsx";
 import Habits from "../components/Habits.jsx";
 import Modal from "../components/Modal.jsx";
 // very light markdown to HTML (bold, italics, links, line breaks) — safe as innerText via dangerouslySetInnerHTML only after naive sanitization
@@ -759,6 +760,13 @@ export default function App() {
                   📈
                 </button>
                 <button
+                  className={view === "productivity" ? "active" : ""}
+                  onClick={() => setView("productivity")}
+                  title="生産性分析"
+                >
+                  📊
+                </button>
+                <button
                   className={view === "habits" ? "active" : ""}
                   onClick={() => setView("habits")}
                   title="習慣表示"
@@ -1263,6 +1271,8 @@ export default function App() {
               projectId={typeof pid === "number" ? pid : null}
               getHeaders={h}
             />
+          ) : view === "productivity" ? (
+            <ProductivityAnalytics userId={uid} getHeaders={h} />
           ) : view === "habits" ? (
             <Habits userId={uid} getHeaders={h} projectId={pid} />
           ) : (
