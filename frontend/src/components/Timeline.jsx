@@ -12,23 +12,74 @@ export default function Timeline({ userId, getHeaders, tasks, onTaskUpdate }) {
     loadTimeEntries();
   }, [userId, date]);
 
+  // Restore active tracking on mount (prefer server truth)
+  useEffect(() => {
+    if (!userId) return;
+    (async () => {
+      try {
+        // First, ask server for an active entry
+        const r = await fetch(
+          `/api/time-entries/active?line_user_id=${encodeURIComponent(userId)}`,
+          { headers: await getHeaders() }
+        );
+        if (r.ok) {
+          const ct = r.headers.get("content-type") || "";
+          const text = await r.text();
+          if (ct.includes("application/json")) {
+            const data = text ? JSON.parse(text) : null;
+            if (data && data.task_id && data.start_time && !data.end_time) {
+              setActiveTracking({
+                taskId: data.task_id,
+                startTime: data.start_time,
+              });
+            } else {
+              setActiveTracking(null);
+            }
+            return; // Do not fallback if server responded JSON
+          }
+        }
+        // Fallback only if server fetch failed or returned non-JSON
+        const key = `activeTracking:${userId}`;
+        const raw = window.localStorage.getItem(key);
+        if (raw) {
+          const obj = JSON.parse(raw);
+          if (obj && obj.taskId && obj.startTime) setActiveTracking(obj);
+        }
+      } catch {}
+    })();
+  }, [userId]);
+
   const timeSlots = useMemo(() => {
     const slots = [];
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(
+      now.getMonth() + 1
+    ).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const viewingIsToday = date === todayStr;
+
     for (let hour = 6; hour < 24; hour++) {
       slots.push({
         hour,
         label: `${hour.toString().padStart(2, "0")}:00`,
         entries: timeEntries.filter((entry) => {
-          const startHour = new Date(entry.start_time).getHours();
-          const endHour = entry.end_time
-            ? new Date(entry.end_time).getHours()
-            : hour;
+          const start = new Date(entry.start_time);
+          if (isNaN(start.getTime())) return false;
+          let startHour = start.getHours();
+          let endHour;
+          if (entry.end_time) {
+            const end = new Date(entry.end_time);
+            endHour = isNaN(end.getTime()) ? startHour : end.getHours();
+          } else {
+            // Ongoing entry: show up to current hour when viewing today; otherwise only show at start hour
+            endHour = viewingIsToday ? now.getHours() : startHour;
+          }
+          if (endHour < startHour) endHour = startHour;
           return startHour <= hour && hour <= endHour;
         }),
       });
     }
     return slots;
-  }, [timeEntries]);
+  }, [timeEntries, date]);
 
   async function loadTimeEntries() {
     setLoading(true);
@@ -56,7 +107,14 @@ export default function Timeline({ userId, getHeaders, tasks, onTaskUpdate }) {
 
   async function startTracking(taskId) {
     const startTime = new Date().toISOString();
-    setActiveTracking({ taskId, startTime });
+    const next = { taskId, startTime };
+    setActiveTracking(next);
+    try {
+      window.localStorage.setItem(
+        `activeTracking:${userId}`,
+        JSON.stringify(next)
+      );
+    } catch {}
 
     try {
       await fetch("/api/time-entries", {
@@ -69,39 +127,38 @@ export default function Timeline({ userId, getHeaders, tasks, onTaskUpdate }) {
         }),
       });
       await loadTimeEntries();
+      try {
+        window.dispatchEvent(
+          new CustomEvent("tracking:start", { detail: { taskId, startTime } })
+        );
+      } catch {}
     } catch (e) {
       console.error("Failed to start tracking:", e);
       setActiveTracking(null);
+      try {
+        window.localStorage.removeItem(`activeTracking:${userId}`);
+      } catch {}
     }
   }
 
   async function stopTracking() {
     if (!activeTracking) return;
-
-    const endTime = new Date().toISOString();
-    const duration = Math.round(
-      (new Date(endTime) - new Date(activeTracking.startTime)) / 60000
-    ); // minutes
-
     try {
-      await fetch("/api/time-entries", {
-        method: "PATCH",
+      const r = await fetch("/api/time-entries/stop", {
+        method: "POST",
         headers: await getHeaders(),
-        body: JSON.stringify({
-          line_user_id: userId,
-          task_id: activeTracking.taskId,
-          end_time: endTime,
-          duration_minutes: duration,
-        }),
+        body: JSON.stringify({ line_user_id: userId }),
       });
+      if (!r.ok) throw new Error(`stop ${r.status}`);
 
       setActiveTracking(null);
+      try {
+        window.localStorage.removeItem(`activeTracking:${userId}`);
+      } catch {}
       await loadTimeEntries();
-
-      // Update task with actual time
-      if (onTaskUpdate) {
-        onTaskUpdate(activeTracking.taskId, { actual_minutes: duration });
-      }
+      try {
+        window.dispatchEvent(new CustomEvent("tracking:stop"));
+      } catch {}
     } catch (e) {
       console.error("Failed to stop tracking:", e);
     }

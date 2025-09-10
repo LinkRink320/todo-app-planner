@@ -64,6 +64,31 @@ router.get("/", async (req, res) => {
   }
 });
 
+// GET /api/time-entries/active - Get active (ongoing) time entry for a user
+router.get("/active", async (req, res) => {
+  try {
+    const { line_user_id } = req.query;
+    if (!line_user_id)
+      return res.status(400).json({ error: "line_user_id required" });
+
+    const sql = `
+      SELECT te.*, t.title as task_title, t.importance
+      FROM time_entries te
+      LEFT JOIN tasks t ON te.task_id = t.id
+      WHERE te.line_user_id = ? AND te.end_time IS NULL
+      ORDER BY te.start_time DESC
+      LIMIT 1
+    `;
+
+    db.get(sql, [line_user_id], (err, row) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json(row || null);
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/time-entries - Start time tracking
 router.post("/", async (req, res) => {
   try {
@@ -74,26 +99,80 @@ router.post("/", async (req, res) => {
         .json({ error: "line_user_id, task_id, and start_time required" });
     }
 
-    // Stop any active tracking for this user first
-    const stopSql = `
-      UPDATE time_entries 
-      SET end_time = datetime('now','localtime'),
-          duration_minutes = CAST((julianday(datetime('now','localtime')) - julianday(start_time)) * 24 * 60 AS INTEGER)
+    // Find any active entries first so we can aggregate them after stopping
+    const selectActiveSql = `
+      SELECT id, task_id, start_time FROM time_entries
       WHERE line_user_id = ? AND end_time IS NULL
+      ORDER BY start_time ASC
     `;
+    db.all(selectActiveSql, [line_user_id], (selErr, activeRows) => {
+      if (selErr) return res.status(500).json({ error: selErr.message });
 
-    db.run(stopSql, [line_user_id], function (err) {
-      if (err) return res.status(500).json({ error: err.message });
-
-      // Start new tracking
-      const insertSql = `
-        INSERT INTO time_entries (line_user_id, task_id, start_time)
-        VALUES (?, ?, ?)
+      // Stop any active tracking for this user first
+      const stopSql = `
+        UPDATE time_entries 
+        SET end_time = datetime('now','localtime'),
+            duration_minutes = CAST((julianday(datetime('now','localtime')) - julianday(start_time)) * 24 * 60 AS INTEGER)
+        WHERE line_user_id = ? AND end_time IS NULL
       `;
 
-      db.run(insertSql, [line_user_id, task_id, start_time], function (err) {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ id: this.lastID });
+      db.run(stopSql, [line_user_id], function (updErr) {
+        if (updErr) return res.status(500).json({ error: updErr.message });
+
+        // For each previously active entry, update task aggregates
+        const handleAggregate = (i) => {
+          if (!activeRows || i >= activeRows.length) {
+            // Start new tracking after aggregates
+            const insertSql = `
+              INSERT INTO time_entries (line_user_id, task_id, start_time)
+              VALUES (?, ?, ?)
+            `;
+
+            return db.run(
+              insertSql,
+              [line_user_id, task_id, start_time],
+              function (insErr) {
+                if (insErr)
+                  return res.status(500).json({ error: insErr.message });
+                res.json({ id: this.lastID });
+              }
+            );
+          }
+
+          const row = activeRows[i];
+          // fetch updated duration/end_time
+          db.get(
+            `SELECT duration_minutes, end_time FROM time_entries WHERE id = ?`,
+            [row.id],
+            (gErr, updated) => {
+              if (gErr) {
+                console.error("aggregate fetch error", gErr);
+                return handleAggregate(i + 1);
+              }
+              const dur = updated?.duration_minutes || 0;
+              if (dur <= 0 || !row.task_id) return handleAggregate(i + 1);
+              const updateTaskSql = `
+                UPDATE tasks 
+                SET actual_minutes = COALESCE(actual_minutes, 0) + ?,
+                    time_entries = json_insert(
+                      COALESCE(time_entries, '[]'),
+                      '$[#]',
+                      json_object('start', ?, 'end', ?, 'duration', ?)
+                    )
+                WHERE id = ?
+              `;
+              db.run(
+                updateTaskSql,
+                [dur, row.start_time, updated.end_time, dur, row.task_id],
+                (tErr) => {
+                  if (tErr) console.error("Failed to update task time:", tErr);
+                  handleAggregate(i + 1);
+                }
+              );
+            }
+          );
+        };
+        handleAggregate(0);
       });
     });
   } catch (err) {
@@ -161,6 +240,98 @@ router.patch("/", async (req, res) => {
         }
       }
     );
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/time-entries/stop - Stop the active entry for a user (task-agnostic)
+router.post("/stop", async (req, res) => {
+  try {
+    const { line_user_id } = req.body || {};
+    if (!line_user_id)
+      return res.status(400).json({ error: "line_user_id required" });
+
+    // Find all active entries
+    const selectSql = `
+      SELECT id, task_id, start_time FROM time_entries
+      WHERE line_user_id = ? AND end_time IS NULL
+      ORDER BY start_time ASC
+    `;
+    db.all(selectSql, [line_user_id], (selErr, rows) => {
+      if (selErr) return res.status(500).json({ error: selErr.message });
+      if (!rows || rows.length === 0)
+        return res.status(404).json({ error: "No active time entry" });
+
+      // Stop all in a transaction and then aggregate
+      db.run("BEGIN", (begErr) => {
+        if (begErr) return res.status(500).json({ error: begErr.message });
+
+        const endTimeSql = `
+          UPDATE time_entries
+          SET end_time = datetime('now','localtime'),
+              duration_minutes = CAST((julianday(datetime('now','localtime')) - julianday(start_time)) * 24 * 60 AS INTEGER)
+          WHERE id = ?
+        `;
+
+        const updatedIds = [];
+        const stopNext = (i) => {
+          if (i >= rows.length) {
+            // After stopping, update task aggregates for each stopped row
+            const aggNext = (j) => {
+              if (j >= rows.length) {
+                return db.run("COMMIT", () =>
+                  res.json({ success: true, stoppedIds: updatedIds })
+                );
+              }
+              const row = rows[j];
+              if (!row.task_id) return aggNext(j + 1);
+              db.get(
+                `SELECT duration_minutes, end_time FROM time_entries WHERE id = ?`,
+                [row.id],
+                (gErr, updated) => {
+                  if (gErr) {
+                    console.error("get updated time entry error", gErr);
+                    return aggNext(j + 1);
+                  }
+                  const dur = updated?.duration_minutes || 0;
+                  if (dur <= 0) return aggNext(j + 1);
+                  const updateTaskSql = `
+                    UPDATE tasks 
+                    SET actual_minutes = COALESCE(actual_minutes, 0) + ?,
+                        time_entries = json_insert(
+                          COALESCE(time_entries, '[]'),
+                          '$[#]',
+                          json_object('start', ?, 'end', ?, 'duration', ?)
+                        )
+                    WHERE id = ?
+                  `;
+                  db.run(
+                    updateTaskSql,
+                    [dur, row.start_time, updated.end_time, dur, row.task_id],
+                    (tErr) => {
+                      if (tErr)
+                        console.error("Failed to update task time:", tErr);
+                      aggNext(j + 1);
+                    }
+                  );
+                }
+              );
+            };
+            return aggNext(0);
+          }
+          db.run(endTimeSql, [rows[i].id], function (updErr) {
+            if (updErr) {
+              console.error("stop update error", updErr);
+              return stopNext(i + 1);
+            }
+            updatedIds.push(rows[i].id);
+            stopNext(i + 1);
+          });
+        };
+        stopNext(0);
+      });
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

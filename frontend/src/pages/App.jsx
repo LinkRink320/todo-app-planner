@@ -98,6 +98,8 @@ export default function App() {
   const [tdUrl, setTdUrl] = useState("");
   const [tdDetails, setTdDetails] = useState("");
   const [todosRefreshSeq, setTodosRefreshSeq] = useState(0);
+  // Global time tracking state (so switching views doesn't lose UI control)
+  const [globalTracking, setGlobalTracking] = useState(null); // {taskId, startTime, taskTitle}
   useEffect(() => {
     if (todoQuickTaskId != null) {
       const t = setTimeout(() => setTodoQuickTaskId(null), 300);
@@ -189,6 +191,124 @@ export default function App() {
   useEffect(() => {
     if (api && uid) loadViews();
   }, [api, uid]);
+
+  // On app mount or user change, fetch active tracking entry so UI can show it globally
+  useEffect(() => {
+    if (!api || !uid) return;
+    (async () => {
+      try {
+        const r = await fetch(
+          `/api/time-entries/active?line_user_id=${encodeURIComponent(uid)}`,
+          { headers: await h() }
+        );
+        if (!r.ok) return;
+        const ct = r.headers.get("content-type") || "";
+        const text = await r.text();
+        if (!ct.includes("application/json") || !text) return;
+        const data = JSON.parse(text);
+        if (data && data.task_id && data.start_time && !data.end_time) {
+          setGlobalTracking({
+            taskId: data.task_id,
+            startTime: data.start_time,
+            taskTitle: data.task_title || `タスク#${data.task_id}`,
+          });
+        } else {
+          setGlobalTracking(null);
+        }
+      } catch {}
+    })();
+  }, [api, uid]);
+
+  // Also refresh active tracking when view changes and on a short interval to keep UI in sync
+  useEffect(() => {
+    if (!api || !uid) return;
+    let timerId;
+    let aborted = false;
+    async function refreshActive() {
+      try {
+        const r = await fetch(
+          `/api/time-entries/active?line_user_id=${encodeURIComponent(uid)}`,
+          { headers: await h() }
+        );
+        if (!r.ok) return;
+        const ct = r.headers.get("content-type") || "";
+        const text = await r.text();
+        if (!ct.includes("application/json")) return;
+        if (aborted) return;
+        const data = text ? JSON.parse(text) : null;
+        if (data && data.task_id && data.start_time && !data.end_time) {
+          setGlobalTracking((prev) => {
+            if (
+              prev &&
+              prev.taskId === data.task_id &&
+              prev.startTime === data.start_time
+            )
+              return prev;
+            return {
+              taskId: data.task_id,
+              startTime: data.start_time,
+              taskTitle: data.task_title || `タスク#${data.task_id}`,
+            };
+          });
+        } else {
+          setGlobalTracking(null);
+        }
+      } catch {}
+    }
+    // immediate refresh on view change
+    refreshActive();
+    // poll every 5s for responsive UI
+    timerId = setInterval(refreshActive, 5000);
+    return () => {
+      aborted = true;
+      clearInterval(timerId);
+    };
+  }, [api, uid, view]);
+
+  // Listen to tracking events from Timeline to reflect globally
+  useEffect(() => {
+    function onStart(e) {
+      const { taskId, startTime } = e.detail || {};
+      if (!taskId || !startTime) return;
+      const t = tasks.find((x) => x.id === taskId);
+      setGlobalTracking({
+        taskId,
+        startTime,
+        taskTitle: t?.title || `タスク#${taskId}`,
+      });
+    }
+    function onStop() {
+      setGlobalTracking(null);
+    }
+    window.addEventListener("tracking:start", onStart);
+    window.addEventListener("tracking:stop", onStop);
+    return () => {
+      window.removeEventListener("tracking:start", onStart);
+      window.removeEventListener("tracking:stop", onStop);
+    };
+  }, [tasks]);
+
+  async function stopGlobalTracking() {
+    if (!globalTracking) return;
+    try {
+      const r = await fetch(`/api/time-entries/stop`, {
+        method: "POST",
+        headers: await h(),
+        body: JSON.stringify({ line_user_id: uid }),
+      });
+      if (!r.ok) return showErr(`stop tracking ${r.status}`);
+      setGlobalTracking(null);
+      try {
+        window.localStorage.removeItem(`activeTracking:${uid}`);
+      } catch {}
+      try {
+        window.dispatchEvent(new CustomEvent("tracking:stop"));
+      } catch {}
+      loadTasks();
+    } catch (e) {
+      showErr(e);
+    }
+  }
 
   async function h() {
     return { "x-api-key": api, "Content-Type": "application/json" };
@@ -1280,6 +1400,41 @@ export default function App() {
           )}
         </main>
       </div>
+
+      {/* Global tracking bar */}
+      {globalTracking && (
+        <div
+          style={{
+            position: "fixed",
+            left: 12,
+            right: 12,
+            bottom: 12,
+            background: "#1e88e5",
+            color: "#fff",
+            padding: "8px 12px",
+            borderRadius: 8,
+            boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            zIndex: 50,
+          }}
+        >
+          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <span>⏱️ 実行中: {globalTracking.taskTitle}</span>
+            <span style={{ opacity: 0.85 }}>
+              開始:{" "}
+              {new Date(globalTracking.startTime).toLocaleTimeString("ja-JP", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </span>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={stopGlobalTracking}>⏹️ 停止</button>
+          </div>
+        </div>
+      )}
 
       {isMobile && drawerOpen && (
         <>
