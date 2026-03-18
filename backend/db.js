@@ -1,10 +1,18 @@
 const sqlite3 = require("sqlite3").verbose();
 const path = require("path");
+const fs = require("fs");
 const { env } = require("./config");
 
 const dbPath = path.isAbsolute(env.DATABASE_PATH)
   ? env.DATABASE_PATH
   : path.join(process.cwd(), env.DATABASE_PATH);
+
+// Ensure the directory exists (needed on Railway before volume is mounted)
+const dbDir = path.dirname(dbPath);
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
+}
+
 const db = new sqlite3.Database(dbPath);
 
 // Improve concurrency and reduce lock contention timeouts
