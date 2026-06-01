@@ -4,3 +4,4 @@ node_modules
 frontend/dist
 /# Only ignore top-level src (legacy), not frontend/src
 /src/
+.claudeignore
