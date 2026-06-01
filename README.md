@@ -16,8 +16,8 @@ LINE で「追加・一覧・完了」ができ、締切超過を自動検知し
 - Vite（ビルドツール）
 
 **開発・デプロイ**
-- ngrok（ローカル Webhook 公開）
-- Railway（本番デプロイ推奨）
+- Docker + Docker Compose
+- VPS（ConoHa等）+ Nginx + Let's Encrypt
 
 ## ディレクトリ構成
 
@@ -131,31 +131,85 @@ help          # コマンド一覧を表示
 
 ## セットアップ
 
+### ローカル開発（Docker）
+
 1. 環境変数を設定
 
 ```bash
 cp .env.example .env
-# .env に LINE_CHANNEL_SECRET / LINE_CHANNEL_ACCESS_TOKEN を設定
+# .env に必要な値を設定
 ```
 
-2. 依存関係のインストール（フロントエンドのビルドも自動実行）
+2. Docker で起動
 
 ```bash
-npm install
+docker compose up --build -d
 ```
 
-3. ローカル起動
+3. ブラウザで `http://localhost:3000` を開く
+
+> **注意**: ローカルでは LINE Webhook は使えません。本番デプロイ後に設定してください。
+
+### 本番デプロイ（VPS + Docker + Nginx）
+
+1. VPS（Ubuntu 22.04）に Docker をインストール
 
 ```bash
-npm run dev          # バックエンド（nodemon）
-npm run web:dev      # フロントエンド開発サーバー（http://localhost:5173）
+apt update && apt install -y ca-certificates curl && \
+install -m 0755 -d /etc/apt/keyrings && \
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc && \
+chmod a+r /etc/apt/keyrings/docker.asc && \
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null && \
+apt update && apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 ```
 
-4. ngrok で Webhook を公開し、LINE コンソールに登録
+2. リポジトリをクローンして `.env` を作成
 
 ```bash
-npm run tunnel
-# Webhook URL: https://<ngrokドメイン>/line/webhook
+git clone https://github.com/LinkRink320/todo-app-planner.git /opt/todo-app
+cd /opt/todo-app
+nano .env
+```
+
+3. 起動
+
+```bash
+docker compose up --build -d
+```
+
+4. Nginx + Let's Encrypt で HTTPS 化
+
+```bash
+apt install -y nginx certbot python3-certbot-nginx
+ufw allow 'Nginx Full'
+```
+
+`/etc/nginx/sites-available/todo-app` を作成：
+
+```nginx
+server {
+    listen 80;
+    server_name your-domain.com;
+
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+```bash
+ln -s /etc/nginx/sites-available/todo-app /etc/nginx/sites-enabled/
+nginx -t && systemctl reload nginx
+certbot --nginx -d your-domain.com
+```
+
+5. LINE Developers コンソールで Webhook URL を設定
+
+```
+https://your-domain.com/line/webhook
 ```
 
 ## 動作確認の流れ
@@ -288,27 +342,9 @@ npm run tunnel
 | GET | `/api/config` | フロントエンド初期化用の公開設定 |
 | GET | `/` | ヘルスチェック（`ok` を返す） |
 
-## Railway へのデプロイ
+## 環境変数（docker-compose.yml）
 
-1. GitHub 連携でこのリポジトリを選択して新規 Service を作成
-2. Variables（環境変数）を設定
-
-```
-LINE_CHANNEL_SECRET=...
-LINE_CHANNEL_ACCESS_TOKEN=...
-PORT=3000
-TZ=Asia/Tokyo
-DATABASE_PATH=/data/data.db
-API_KEY=...
-```
-
-3. Volumes を追加（Name: `data`, Mount Path: `/data`, Size: 1GB）
-4. スケール設定でインスタンス数を 1 に固定（Auto-scale OFF）
-5. Start Command は `node backend/server.js`（`package.json` の `start` スクリプト）
-6. デプロイ完了後の URL を LINE の Webhook に設定
-   - `https://<railway-url>/line/webhook`
-
-> **注意**: Volume 未設定だと SQLite ファイルがデプロイのたびに消えます。必ず `/data` にマウントし `DATABASE_PATH` を合わせてください。
+`DATABASE_PATH` と `TZ` は `docker-compose.yml` の `environment` に設定済みです。その他は `.env` で管理してください。
 
 ## 注意点（割り切り）
 
