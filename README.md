@@ -1,47 +1,133 @@
-# Todo Planner（LINE + SQLite, MVP）
+# Todo Planner（LINE + React + SQLite）
 
-LINE で「追加・一覧・完了」ができ、締切超過を自動検知して本人＋監視グループに通知する最小実行可能な ToDo アプリです。30 分前/5 分前の事前リマインドも行います。短期タスクに加えて、長期目標（進捗%）とプロジェクト（長期の器）＋紐づくタスクの管理をサポートします。
+LINE で「追加・一覧・完了」ができ、締切超過を自動検知して本人＋監視グループに通知する ToDo アプリです。
+短期タスク・長期目標・プロジェクト管理に加え、繰り返しタスク（習慣）・時間計測・生産性分析・PDCA ログ・デイリープランまで対応した React フロントエンド付きの構成になっています。
 
 ## スタック
 
-- Node.js + Express
+**バックエンド**
+- Node.js + Express 5
 - @line/bot-sdk（Messaging API）
 - sqlite3（ローカル DB）
-- node-cron（締切チェック）
+- node-cron（締切チェック・リマインド）
+
+**フロントエンド**
+- React 18 + React Router v6
+- Vite（ビルドツール）
+
+**開発・デプロイ**
 - ngrok（ローカル Webhook 公開）
-- 最小 REST + 簡易 Web UI（PDCA ログ）
+- Railway（本番デプロイ推奨）
+
+## ディレクトリ構成
+
+```
+todo-app-planner/
+├── backend/
+│   ├── server.js          # エントリポイント・cron 設定
+│   ├── commands.js        # LINE コマンドパーサー
+│   ├── db.js              # DB 初期化・マイグレーション
+│   ├── config.js          # 環境変数管理
+│   ├── routes/
+│   │   ├── api.js         # REST API（タスク・プロジェクト・Todos・プラン・習慣・ビュー）
+│   │   ├── line.js        # LINE Webhook ハンドラ
+│   │   ├── analytics.js   # 生産性分析 API（完了率・パターン・AI振り返り）
+│   │   └── timeTracking.js # 時間計測 API
+│   └── utils/
+│       ├── aiReflection.js # AI 振り返り生成（OpenAI / Anthropic / Gemini）
+│       └── recurring.js    # 繰り返しタスクの次期締切計算
+├── frontend/
+│   └── src/
+│       ├── pages/
+│       │   ├── App.jsx    # メインアプリ（タスク・ビュー切替）
+│       │   └── Login.jsx  # ログイン画面
+│       └── components/
+│           ├── Board.jsx          # カンバンボード
+│           ├── Calendar.jsx       # カレンダービュー
+│           ├── Week.jsx           # 週間ビュー
+│           ├── Timeline.jsx       # タイムラインビュー
+│           ├── Todos.jsx          # サブタスク（チェックリスト）
+│           ├── Plan.jsx           # デイリープラン
+│           ├── Habits.jsx         # 習慣トラッカー
+│           ├── ProductivityAnalytics.jsx # 生産性分析ダッシュボード
+│           └── ProjectAnalytics.jsx      # プロジェクト分析
+└── legacy/                # 旧実装（参照用）
+```
 
 ## データスキーマ
 
-- tasks: id, line_user_id, title, deadline（YYYY-MM-DD HH:mm）, status（pending|done|failed）, created_at,
-  - type（short|long）, progress（0-100）, last_progress_at, updated_at
-- groups: id, group_id, owner_line_user_id, created_at
-- projects: id, line_user_id, name, status（active|archived）, created_at, updated_at
-- tasks.project_id: INTEGER（任意。プロジェクトに紐づくタスク）
+| テーブル | 主なカラム |
+|---------|-----------|
+| tasks | id, line_user_id, title, deadline, soft_deadline, status（pending\|done\|failed）, type（short\|long）, progress, repeat, importance（high\|medium\|low）, estimated_minutes, sort_order, url, details_md |
+| todos | id, task_id, title, done, estimated_minutes, sort_order, url, details_md |
+| groups | id, group_id, owner_line_user_id |
+| projects | id, line_user_id, name, status（active\|archived）, goal, description |
+| saved_views | id, line_user_id, name, payload, view_order |
+| plans | id, line_user_id, date（UNIQUE per user）|
+| plan_items | id, plan_id, task_id, sort_order |
+| time_entries | id, line_user_id, task_id, start_time, end_time, duration_minutes |
+| logs | id, line_user_id, project_id, task_id, type（plan\|do\|check\|act）, note |
 
-## LINE コマンド（個チャ/グループ）
+## LINE コマンド
 
-- 追加: `add 2025-08-12 23:00 レポート仕上げ`
-- 一覧: `ls`
-- 完了: `done 3`
-- 監視グループ登録（グループ内で実行）: `watch here`
+### 短期タスク
+```
+add 2025-08-12 23:00 レポート仕上げ   # 締切あり
+add レポート仕上げ                     # 締切なしでも登録可
+ls                                     # 一覧表示
+done 3                                 # ID=3 を完了
+```
 
-長期目標:
+### 長期目標
+```
+addl 2025-12-31 23:59 英語B2    # 長期目標追加（初期 progress=0%）
+lsl                              # 長期目標一覧（最新更新順）
+prog 10 45%                      # ID=10 の進捗を 45% に更新
+```
 
-- 追加（長期）: `addl 2025-12-31 23:59 英語B2`（初期 progress=0%）
-- 一覧（長期）: `lsl`
-- 進捗更新: `prog 10 45%`（ID=10 の目標を 45% に更新）
+### プロジェクト
+```
+padd 新規事業A                             # プロジェクト追加
+pls                                        # プロジェクト一覧
+addp 3 2025-09-01 09:00 企画書ドラフト     # プロジェクト配下にタスク追加
+lsp 3                                      # プロジェクト配下のタスク一覧
+```
 
-プロジェクト:
+### その他
+```
+watch here    # グループ内で実行 → 監視グループとして登録
+whoami        # 自分の LINE User ID を確認（myid / id でも可）
+url           # Web UI の URL を取得
+help          # コマンド一覧を表示
+```
 
-- 追加: `padd 新規事業A`
-- 一覧: `pls`
-- タスク追加（プロジェクト配下）: `addp 3 2025-09-01 09:00 企画書ドラフト`
-- タスク一覧（プロジェクト配下）: `lsp 3`
+## Web UI（React）の機能
 
-ユーザー ID の確認:
+ログイン後（`/app`）から以下のビューに切り替えられます。
 
-- `whoami`（または `myid` / `id`）を個チャで送ると、自分の LINE User ID が返信されます。/app の「LINE User ID」欄にも同じ ID を入力してください。
+| ビュー | 説明 |
+|--------|------|
+| リスト | タスク一覧・フィルタ・ドラッグ並び替え |
+| カンバン | ステータス別ボード（Board.jsx） |
+| カレンダー | 月間カレンダー表示 |
+| 週間 | 週次タスク管理 |
+| タイムライン | 時系列タスク表示 |
+| プラン | デイリープラン作成・編集 |
+| 習慣 | 繰り返しタスクのチェック状況 |
+| 分析（プロジェクト） | 完了率・週次メトリクス |
+| 分析（生産性） | 完了率推移・生産性パターン・AI 振り返り |
+
+## 通知・自動処理（cron）
+
+| タイミング | 内容 |
+|-----------|------|
+| 毎分 | 締切超過タスクを `failed` に更新し、本人と監視グループに Push 通知 |
+| 締切 30 分前 / 5 分前 | 短期タスクのリマインド通知（本人のみ） |
+| 翌朝（デフォルト 08:00） | 前日未達タスクに削除/延期の確認メッセージ送信 |
+| 毎朝（デフォルト 08:30） | 当日タスクのサマリー通知 |
+| 毎晩（デフォルト 21:00） | 翌日タスクの計画リマインド通知 |
+
+未達タスクへの返信選択肢：「削除する」「延期: 明日 9 時」「延期: 次営業日 9 時」
 
 ## セットアップ
 
@@ -52,7 +138,7 @@ cp .env.example .env
 # .env に LINE_CHANNEL_SECRET / LINE_CHANNEL_ACCESS_TOKEN を設定
 ```
 
-2. 依存関係のインストール
+2. 依存関係のインストール（フロントエンドのビルドも自動実行）
 
 ```bash
 npm install
@@ -61,121 +147,172 @@ npm install
 3. ローカル起動
 
 ```bash
-npm run dev
+npm run dev          # バックエンド（nodemon）
+npm run web:dev      # フロントエンド開発サーバー（http://localhost:5173）
 ```
 
-4. ngrok で Webhook を公開し、LINE コンソール（Messaging API 設定）に登録
+4. ngrok で Webhook を公開し、LINE コンソールに登録
 
 ```bash
-ngrok http 3000
+npm run tunnel
 # Webhook URL: https://<ngrokドメイン>/line/webhook
-# Webhookを「有効化」し、Botを友だち追加
 ```
 
 ## 動作確認の流れ
 
 1. 個チャで `add 2025-08-12 23:00 テスト` → 「登録 OK」返信
-2. `ls` → 登録済みタスクの一覧が見える
+2. `ls` → タスク一覧を確認
 3. `done 1` → 完了
-4. Bot をグループに招待して、グループ内で `watch here` → 監視先グループとして登録
-5. 期限を過ぎると、毎分のチェックで `pending -> failed` に更新され、
-   - 本人: `⚠️未達成「タイトル」（期限: YYYY-MM-DD HH:mm）`
-   - 監視グループ: `📢未達成: タイトル（期限超過）`
-     が Push 通知で届きます。
-6. 事前リマインド: 期限の 30 分前と 5 分前に、本人にリマインドが届きます（短期タスク）
-7. 翌朝の整理: 前日までに未達(failed)になったタスクに対して、翌朝（既定 08:00、環境変数で変更可）に確認メッセージを送ります。選択肢: 「削除する」/「延期: 明日 9 時」/「延期: 次営業日 9 時」（自動削除はしません）。
-8. 夜の計画リマインド: 毎晩（既定 21:00、環境変数で変更可）に「明日のタスクを追加・調整しましょう」と通知します。
-
-長期目標の確認:
-
-1. 個チャで `addl 2025-12-31 23:59 英語B2`
-2. `lsl` で進捗一覧（最新更新順）
-3. `prog 1 30%` で更新 → `lsl` に反映
-
-## 注意点（割り切り）
-
-- 日時は `YYYY-MM-DD HH:mm` のみ対応（ローカル時刻）
-- 監視は「ユーザー 1 ↔ グループ 1」を想定（最新登録を採用）
-- 締切チェックは毎分実行（厳密な秒単位は考慮しません）
-- DB ファイルは既定で `./data.db`（`.env` の `DATABASE_PATH` で変更可）
-- リマインドは同一分に一致したものに送信（再起動直後などの重複送信は稀に起こる可能性あり）
+4. Bot をグループに招待して `watch here` → 監視グループ登録
+5. 期限超過 → `pending → failed` に更新され、本人と監視グループに Push 通知が届く
+6. ブラウザで `https://<ドメイン>/login` → API_KEY・LINE User ID を入力 → `/app` でフル機能の Web UI を利用
 
 ## 環境変数
 
-- LINE_CHANNEL_SECRET
-- LINE_CHANNEL_ACCESS_TOKEN
-- PORT（省略時 3000）
-- DATABASE_PATH（省略時 ./data.db）
-- TZ（省略時 未設定。クラウドでは `Asia/Tokyo` を推奨）
-- API_KEY（REST/簡易 UI 用。任意）
-- DEFAULT_LINE_USER_ID（任意。/app 初期入力に使用）
-- DEFAULT_LINE_USER_NAME（任意。将来用途）
-- MORNING_SUMMARY_CRON（任意。朝のサマリー送信の cron。既定: `30 8 * * *`）
-- MORNING_DELETE_CONFIRM_CRON（任意。前日未達の削除確認の cron。既定: `0 8 * * *`）
-- EVENING_PLAN_REMINDER_CRON（任意。夜の計画リマインドの cron。既定: `0 21 * * *`）
+### 必須
 
-### AI 振り返り機能（任意）
+| 変数名 | 説明 |
+|--------|------|
+| LINE_CHANNEL_SECRET | LINE チャンネルシークレット |
+| LINE_CHANNEL_ACCESS_TOKEN | LINE チャンネルアクセストークン |
 
-- OPENAI_API_KEY（OpenAI API キー）
-- ANTHROPIC_API_KEY（Anthropic API キー）
-- GEMINI_API_KEY（Google Gemini API キー）
-- AI_PROVIDER（任意。`openai`、`anthropic`、`gemini` のいずれか。既定: `openai`）
-- AI_MODEL（任意。使用する AI モデル。既定: `gpt-3.5-turbo`）
+### オプション
 
-**注意**: AI キーが設定されていない場合は、シンプルなルールベースの振り返りが使用されます。
+| 変数名 | デフォルト | 説明 |
+|--------|-----------|------|
+| PORT | 3000 | サーバーポート |
+| DATABASE_PATH | ./data.db | SQLite ファイルパス |
+| TZ | 未設定 | クラウド環境では `Asia/Tokyo` を推奨 |
+| API_KEY | なし | REST API / Web UI 認証キー（未設定時は API 無効） |
+| DEFAULT_LINE_USER_ID | なし | Web UI ログイン画面の初期入力値 |
+| MORNING_SUMMARY_CRON | `30 8 * * *` | 朝のサマリー cron |
+| MORNING_DELETE_CONFIRM_CRON | `0 8 * * *` | 前日未達の確認 cron |
+| EVENING_PLAN_REMINDER_CRON | `0 21 * * *` | 夜の計画リマインド cron |
 
-## ヘルスチェック
+## REST API
 
-- GET `/` → `ok`
-- GET `/app` → 簡易 PDCA UI（.env の API_KEY を `x-api-key` に設定して利用）
-  - 入口: GET `/login` → API_KEY と LINE User ID を入力 → /app へ遷移（セッション保存）
-  - React 版: `/react`（ビルド済みのとき）
+すべてのエンドポイントに `x-api-key` ヘッダーが必要です。
 
-### フロントエンド（React, 任意）
+### タスク
 
-- ローカル開発
-  - バックエンド: `npm run dev`
-  - React: `npm run web:dev`（http://localhost:5173、/api は http://localhost:3000 にプロキシ）
-- ビルドしてサーバから配信
-  - `npm run web:build` → `src/server.js` が `/react` で `frontend/dist` を配信
-- LINE User ID は `whoami` コマンドで取得可能。
-- GET `/api/config` → クライアント初期化用の公開設定（API キーは返しません）
-- GET `/api/line-profile?user_id=...`（要 `x-api-key`）→ LINE の displayName 参照
+| メソッド | パス | 説明 |
+|---------|------|------|
+| GET | `/api/tasks` | タスク一覧（`line_user_id`, `project_id`, `status`, `importance` でフィルタ可） |
+| POST | `/api/tasks` | タスク作成（`repeat` で繰り返し設定可: `daily` / `weekdays` / `weekly` / `monthly`） |
+| PATCH | `/api/tasks/:id` | タスク更新（`soft_deadline`, `importance`, `sort_order` 等） |
+| DELETE | `/api/tasks/:id` | タスク削除 |
+| POST | `/api/tasks/reorder` | ドラッグ並び替え |
 
-## 最小 REST（PDCA）
+### サブタスク（Todos）
 
-- POST `/api/logs`（要 `x-api-key`）
-  - body: { line_user_id: string, project_id?: number, task_id?: number, type: 'plan'|'do'|'check'|'act', note?: string }
-- GET `/api/logs?line_user_id=...&project_id=...&task_id=...&limit=50`（要 `x-api-key`）
-- GET `/api/projects?line_user_id=...`（要 `x-api-key`）
-- GET `/api/tasks?line_user_id=...&project_id=...&status=pending`（要 `x-api-key`）
+| メソッド | パス | 説明 |
+|---------|------|------|
+| GET | `/api/todos` | サブタスク一覧 |
+| GET | `/api/todos/by-user` | ユーザー単位で全サブタスク取得 |
+| POST | `/api/todos` | サブタスク作成 |
+| PATCH | `/api/todos/:id` | サブタスク更新 |
+| DELETE | `/api/todos/:id` | サブタスク削除 |
+| POST | `/api/todos/reorder` | 並び替え |
 
-## デプロイ（参考）
+### プロジェクト
 
-- API: Render/Railway 等でデプロイし、Webhook URL を本番に設定
-- フロントエンド（Next.js）は次スプリントで追加予定
+| メソッド | パス | 説明 |
+|---------|------|------|
+| GET | `/api/projects` | プロジェクト一覧 |
+| POST | `/api/projects` | プロジェクト作成 |
+| PATCH | `/api/projects/:id` | プロジェクト更新 |
+| GET | `/api/projects/:id/overview` | プロジェクト概要（タスク数・完了率など） |
+| GET | `/api/projects/:id/weekly-metrics` | 週次メトリクス |
 
-## Railway へのデプロイ（推奨）
+### デイリープラン
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| GET | `/api/plans` | プラン一覧 |
+| POST | `/api/plans` | プラン作成 |
+| POST | `/api/plans/:id/items` | プランにタスク追加 |
+| PATCH | `/api/plans/:id/items/:itemId` | プランアイテム更新 |
+| DELETE | `/api/plans/:id/items/:itemId` | プランアイテム削除 |
+| POST | `/api/plans/:id/items/reorder` | プランアイテム並び替え |
+
+### 習慣（繰り返しタスク）
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| GET | `/api/habits` | 繰り返しタスクの達成状況一覧（`repeats`, `days` でフィルタ） |
+
+### 時間計測
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| GET | `/api/time-tracking` | 計測履歴一覧 |
+| GET | `/api/time-tracking/active` | 計測中のエントリ取得 |
+| POST | `/api/time-tracking` | 計測開始 |
+| PATCH | `/api/time-tracking` | 計測更新 |
+| POST | `/api/time-tracking/stop` | 計測停止 |
+| DELETE | `/api/time-tracking/:id` | 計測履歴削除 |
+
+### 分析
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| GET | `/api/analytics/completion-rate` | 日別完了率推移 |
+| GET | `/api/analytics/productivity-patterns` | 生産性パターン分析 |
+| GET | `/api/analytics/estimation-accuracy` | 見積もり精度 |
+| GET | `/api/analytics/project-progress` | プロジェクト別進捗 |
+| GET | `/api/analytics/daily-reflection` | デイリー振り返り |
+| POST | `/api/analytics/ai-reflection` | AI 振り返り生成 |
+
+### PDCA ログ
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| POST | `/api/logs` | ログ記録（type: `plan`\|`do`\|`check`\|`act`） |
+| GET | `/api/logs` | ログ一覧 |
+
+### ビュー（保存済みフィルタ）
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| GET | `/api/views` | ビュー一覧 |
+| POST | `/api/views` | ビュー保存 |
+| PATCH | `/api/views/:id` | ビュー更新 |
+| DELETE | `/api/views/:id` | ビュー削除 |
+| POST | `/api/views/reorder` | ビュー並び替え |
+
+### その他
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| GET | `/api/line-profile` | LINE displayName 取得 |
+| GET | `/api/config` | フロントエンド初期化用の公開設定 |
+| GET | `/` | ヘルスチェック（`ok` を返す） |
+
+## Railway へのデプロイ
 
 1. GitHub 連携でこのリポジトリを選択して新規 Service を作成
-2. Variables（環境変数）を追加
+2. Variables（環境変数）を設定
 
-- LINE_CHANNEL_SECRET
-- LINE_CHANNEL_ACCESS_TOKEN
-- PORT=3000
-- TZ=Asia/Tokyo
-- DATABASE_PATH=/data/data.db
+```
+LINE_CHANNEL_SECRET=...
+LINE_CHANNEL_ACCESS_TOKEN=...
+PORT=3000
+TZ=Asia/Tokyo
+DATABASE_PATH=/data/data.db
+API_KEY=...
+```
 
-3. Volumes を追加（例: Name=data, Mount Path=/data, Size=1GB）
+3. Volumes を追加（Name: `data`, Mount Path: `/data`, Size: 1GB）
 4. スケール設定でインスタンス数を 1 に固定（Auto-scale OFF）
-5. Start Command は package.json の `start`（= `node src/server.js`）が使われます
+5. Start Command は `node backend/server.js`（`package.json` の `start` スクリプト）
 6. デプロイ完了後の URL を LINE の Webhook に設定
+   - `https://<railway-url>/line/webhook`
 
-- https://<railway-url>/line/webhook
+> **注意**: Volume 未設定だと SQLite ファイルがデプロイのたびに消えます。必ず `/data` にマウントし `DATABASE_PATH` を合わせてください。
 
-7. 動作確認（LINE で add / ls / done、グループで watch here）
+## 注意点（割り切り）
 
-注意:
-
-- 無料枠ではスリープの可能性あり → 即応性が必要なら有料プランや Keep-Alive を検討
-- Volume 未設定だと SQLite ファイルが消えるため、必ず /data にマウントし DATABASE_PATH を合わせる
+- 日時フォーマットは `YYYY-MM-DD HH:mm` のみ（ローカル時刻）
+- 監視グループは「ユーザー 1 ↔ グループ 1」を想定（最新登録を採用）
+- 締切チェックは毎分実行（秒単位の精度は保証しない）
+- 再起動直後などにリマインドが重複して届く場合がある
