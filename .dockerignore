@@ -13,3 +13,7 @@ yarn-error.log*
 **/*.db-journal
 **/*.db-wal
 **/*.db-shm
+**/*.db-wal.bak
+**/*.db-shm.bak
+**/*.db.bak
+data/
