@@ -2,12 +2,9 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm ci --omit=dev
-
 COPY . .
 
-RUN npm run web:build
+RUN npm ci
 
 EXPOSE 3000
 
