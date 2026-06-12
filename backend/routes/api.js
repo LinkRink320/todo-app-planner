@@ -3,6 +3,7 @@ const { Client } = require("@line/bot-sdk");
 const db = require("../db");
 const { env, line } = require("../config");
 const { handleRecurringTaskCreation } = require("../utils/recurring");
+const { authMiddleware } = require("../utils/apiAuth");
 
 const router = express.Router();
 const client = new Client(line);
@@ -24,12 +25,7 @@ function ensureViewOrderColumn(cb) {
   }
 }
 
-router.use((req, res, next) => {
-  const k = req.headers["x-api-key"];
-  if (!env.API_KEY) return res.status(403).json({ error: "API disabled" });
-  if (k !== env.API_KEY) return res.status(401).json({ error: "unauthorized" });
-  next();
-});
+router.use(authMiddleware);
 
 router.post("/logs", (req, res) => {
   const { line_user_id, project_id, task_id, type, note } = req.body || {};

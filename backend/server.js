@@ -11,9 +11,20 @@ const lineRouter = require("./routes/line");
 const timeTrackingRouter = require("./routes/timeTracking");
 const analyticsRouter = require("./routes/analytics");
 const { handleRecurringTaskCreation } = require("./utils/recurring");
+const { keyMatches } = require("./utils/apiAuth");
 
 const client = new Client(lineCfg);
 const app = express();
+
+// Behind nginx: derive client IP from X-Forwarded-For (needed for rate limiting)
+app.set("trust proxy", 1);
+app.disable("x-powered-by");
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  next();
+});
 
 app.get("/healthz", (_, res) => res.send("ok"));
 // Basic request timeout for API routes to avoid hanging connections
@@ -26,10 +37,12 @@ function withTimeout(ms) {
 }
 app.use("/api", withTimeout(10000), express.json());
 app.get("/api/config", (req, res) => {
+  // Defaults contain the owner's LINE user ID — only reveal to authenticated callers
+  const authed = keyMatches(req.headers["x-api-key"]);
   res.json({
     apiKeySet: Boolean(env.API_KEY),
-    defaultLineUserId: env.DEFAULT_LINE_USER_ID || null,
-    defaultLineUserName: env.DEFAULT_LINE_USER_NAME || null,
+    defaultLineUserId: authed ? env.DEFAULT_LINE_USER_ID || null : null,
+    defaultLineUserName: authed ? env.DEFAULT_LINE_USER_NAME || null : null,
   });
 });
 app.use("/api", apiRouter);

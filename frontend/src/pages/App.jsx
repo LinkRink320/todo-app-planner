@@ -13,8 +13,13 @@ import Modal from "../components/Modal.jsx";
 function mdToHtml(md) {
   if (md == null) return "";
   let s = typeof md === "string" ? md : String(md);
-  // escape basic HTML
-  s = s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  // escape basic HTML (quotes too — they could break out of href attributes)
+  s = s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
   // links [text](url) (simple)
   s = s.replace(
     /\[([^\]]+?)\]\((https?:[^\)\s]+)\)/g,
@@ -325,7 +330,9 @@ export default function App() {
 
   async function bootstrap() {
     try {
-      const r = await fetch("/api/config");
+      const r = await fetch("/api/config", {
+        headers: api ? { "x-api-key": api } : {},
+      });
       if (r.ok) {
         const ct = r.headers.get("content-type") || "";
         const text = await r.text();

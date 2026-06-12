@@ -1,16 +1,11 @@
 const express = require("express");
 const db = require("../db");
-const { env } = require("../config");
+const { authMiddleware } = require("../utils/apiAuth");
 
 const router = express.Router();
 
 // API key authentication middleware
-router.use((req, res, next) => {
-  const k = req.headers["x-api-key"];
-  if (!env.API_KEY) return res.status(403).json({ error: "API disabled" });
-  if (k !== env.API_KEY) return res.status(401).json({ error: "unauthorized" });
-  next();
-});
+router.use(authMiddleware);
 
 // Create time tracking table if not exists
 db.serialize(() => {
