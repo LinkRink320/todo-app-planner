@@ -612,6 +612,23 @@ export default function App() {
         )}
         <strong>Todo Planner (React)</strong>
         <span className="user">
+          <button
+            className="theme-toggle"
+            aria-label="テーマ切替"
+            title="ライト/ダーク切替"
+            onClick={() => {
+              const next =
+                document.documentElement.dataset.theme === "dark"
+                  ? "light"
+                  : "dark";
+              document.documentElement.dataset.theme = next;
+              try {
+                localStorage.setItem("THEME", next);
+              } catch {}
+            }}
+          >
+            {"☽"}
+          </button>
           ユーザー: {String(uid).slice(0, 6)}…
           <a href="/login" style={{ marginRight: 12 }}>
             ログイン
